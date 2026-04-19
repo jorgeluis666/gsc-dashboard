@@ -270,6 +270,15 @@ function fetchGSCSites() {
   });
 }
 
+// ── RESET ALL AND RE-IMPORT ──────────────────────────────
+function resetAndImport() {
+  if (!confirm('Esto borrará todos los snapshots actuales (' + S.snapshots.length + ') e importará datos frescos de "' + S.gscSiteUrl + '".\n\n¿Continuar?')) return;
+  S.snapshots = [];
+  S.curIdx = null;
+  saveState();
+  importFromGSC();
+}
+
 // ── SWITCH PROPERTY — clear snapshots and re-import ──────
 function switchGSCProperty(newSiteUrl) {
   if (!newSiteUrl || newSiteUrl === S.gscSiteUrl) return;

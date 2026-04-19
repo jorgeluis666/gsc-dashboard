@@ -702,8 +702,9 @@ function buildHTML(){
         '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
           '<div><label style="font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px">Rango</label>'+
           '<select id="cfg-gscweeks" onchange="S.gscWeeks=parseInt(this.value);saveState()" style="padding:7px 10px;border:1px solid #E2E8F0;border-radius:8px;font-size:13px;background:#fff">'+weekOptions+'</select></div>'+
-          '<button class="btn success" style="margin-top:18px;padding:9px 20px;font-size:13px" onclick="importFromGSC()">'+
+          '<button class="btn success" style="margin-top:18px;padding:9px 20px;font-size:13px" onclick="importFromGSC()" '+(S.gscImporting?'disabled':'')+'>'+
             (S.gscImporting ? '<span class="spinning">↻</span> Importando…' : '↓ Importar semanas')+'</button>'+
+          '<button class="btn btn-sm" style="margin-top:18px;background:#FEF2F2;color:#DC2626;border-color:#FECACA" onclick="resetAndImport()">⟳ Limpiar e importar todo</button>'+
           '<button class="btn btn-sm" style="margin-top:18px;color:#94A3B8" onclick="disconnectDrive();S.gscStatus=\'disconnected\';S.gscSites=[];render()">Desconectar</button>'+
         '</div>'+
       '</div>';
