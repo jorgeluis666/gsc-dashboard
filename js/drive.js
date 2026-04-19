@@ -27,7 +27,7 @@ function initTokenClient() {
   if (!S.clientId) return;
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: S.clientId,
-    scope: 'https://www.googleapis.com/auth/drive.readonly',
+    scope: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/webmasters.readonly',
     callback: function(resp) {
       if (resp.error) {
         S.driveStatus = 'disconnected';
@@ -38,7 +38,9 @@ function initTokenClient() {
       S.driveStatus = 'connected';
       S.driveMsg = 'Conectado a Google Drive';
       render();
-      toast('✓ Conectado a Google Drive');
+      toast('✓ Conectado a Google — cargando propiedades de Search Console...');
+      // Auto-fetch GSC sites after successful auth
+      if (typeof fetchGSCSites === 'function') fetchGSCSites();
     }
   });
 }
