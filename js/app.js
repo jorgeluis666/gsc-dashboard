@@ -6,7 +6,7 @@ var S = {
   tab: 'overview',
   qFilter: '',
   // drive
-  clientId: '',
+  clientId: '976153544066-8l99fptg5oo4m7tssi9pnadav5nicf5m.apps.googleusercontent.com',
   folderId: '',
   folderName: '',
   accessToken: null,
@@ -34,7 +34,7 @@ function loadState() {
       var d = JSON.parse(v);
       S.snapshots   = d.snapshots   || [];
       S.trackedURLs = d.trackedURLs || [];
-      S.clientId    = d.clientId    || '';
+      // Client ID is hardcoded — never override it from localStorage
       S.folderId    = d.folderId    || '';
       S.folderName  = d.folderName  || '';
       S.gscSiteUrl  = d.gscSiteUrl  || '';
@@ -712,9 +712,9 @@ function buildHTML(){
         '</button>'+
         '<div style="margin-top:1.4rem">'+
           '<details style="display:inline-block;text-align:left">'+
-            '<summary style="cursor:pointer;font-size:11px;color:#94A3B8;list-style:none">⚙ Cambiar Client ID</summary>'+
-            '<div style="margin-top:8px;display:flex;gap:8px">'+
-              '<input id="cfg-clientid" value="'+esc(S.clientId)+'" style="font-size:12px;padding:6px 10px;border:1px solid #E2E8F0;border-radius:6px;width:320px">'+
+            '<summary style="cursor:pointer;font-size:11px;color:#94A3B8;list-style:none">ℹ Semanas a importar</summary>'+
+            '<div style="margin-top:8px;display:flex;gap:8px;align-items:center">'+
+              '<select id="cfg-gscweeks" style="padding:6px 10px;border:1px solid #E2E8F0;border-radius:6px;font-size:12px">'+weekOptions+'</select>'+
               '<button class="btn btn-sm" onclick="saveConfig()">Guardar</button>'+
             '</div>'+
           '</details>'+
