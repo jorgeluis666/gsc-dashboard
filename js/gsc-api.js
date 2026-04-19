@@ -161,8 +161,12 @@ function fetchWeekFromGSC(siteUrl, startDate, endDate, onDone) {
 
 // ── IMPORT N RECENT WEEKS ────────────────────────────────
 function importFromGSC() {
-  if (!S.accessToken) { toast('Conecta con Google primero (tab Configuración)'); return; }
-  if (!S.gscSiteUrl)  { toast('Selecciona una propiedad de Search Console en Configuración'); return; }
+  if (!S.accessToken) { toast('Conecta con Google primero'); return; }
+  if (!S.gscSiteUrl) {
+    S.tab = 'configuración'; render();
+    toast('⚠ Elige la propiedad de Search Console antes de importar');
+    return;
+  }
 
   var weeks   = parseInt(S.gscWeeks) || 8;
   var siteUrl = S.gscSiteUrl;
@@ -264,9 +268,20 @@ function fetchGSCSites() {
     }
     S.gscSites  = sites;
     S.gscStatus = 'connected';
-    if (!S.gscSiteUrl && sites.length > 0) S.gscSiteUrl = sites[0];
-    saveState(); render();
-    toast('✓ Search Console conectado — ' + sites.length + ' propiedad(es)');
+    // Only auto-select if there is exactly ONE property — never guess when there are multiple
+    if (!S.gscSiteUrl) {
+      S.gscSiteUrl = sites.length === 1 ? sites[0] : '';
+    }
+    saveState();
+    // Navigate to Configuración so user picks the right property
+    if (sites.length > 1 && !S.gscSiteUrl) {
+      S.tab = 'configuración';
+      render();
+      toast('✓ Conectado — elige la propiedad correcta y pulsa "↓ Importar semanas"');
+    } else {
+      render();
+      toast('✓ Search Console conectado — ' + sites.length + ' propiedad(es)');
+    }
   });
 }
 
