@@ -46,7 +46,9 @@ function initTokenClient() {
 }
 
 function connectDrive() {
-  if (!S.clientId || !S.folderId) { toast('Configura el Client ID y el Folder ID primero'); return; }
+  if (!S.clientId) { toast('Client ID no configurado'); return; }
+  // folderId only required when connecting Drive for CSV sync, not for GSC-only auth
+  if (!S.folderId && !S.gscPendingConnect) { toast('Configura el Folder ID de Drive primero'); return; }
   S.driveStatus = 'loading'; S.driveMsg = 'Autenticando...'; render();
   if (!gapiLoaded || !gisLoaded) {
     toast('Las librerías de Google aún cargan, espera un momento e intenta de nuevo.');
