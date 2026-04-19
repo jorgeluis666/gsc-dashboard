@@ -214,33 +214,58 @@ function importFromGSC() {
 }
 
 // ── CONNECT / FETCH SITES ────────────────────────────────
+var gscTokenClient = null;
+
 function connectGSC() {
-  if (!S.clientId) { toast('Configura el Client ID en Configuración primero'); return; }
-  if (!S.accessToken) {
-    // OAuth not done yet — trigger it (drive.js handles the flow, scope already includes GSC)
-    S.gscPendingConnect = true;
-    connectDrive();
-    return;
+  if (!S.clientId) { toast('Client ID no configurado'); return; }
+
+  // If we already have a valid token, go straight to fetching sites
+  if (S.accessToken) { fetchGSCSites(); return; }
+
+  // GIS (accounts.google.com/gsi/client) must be loaded
+  if (typeof google === 'undefined' || !google.accounts) {
+    toast('Cargando librería de Google, intenta en un momento…'); return;
   }
-  fetchGSCSites();
+
+  S.gscStatus = 'loading'; render();
+
+  // Init token client once (GIS only — no gapi needed for fetch-based calls)
+  if (!gscTokenClient) {
+    gscTokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: S.clientId,
+      scope: [
+        'https://www.googleapis.com/auth/webmasters.readonly',
+        'https://www.googleapis.com/auth/drive.readonly'
+      ].join(' '),
+      callback: function(resp) {
+        if (resp.error) {
+          S.gscStatus = 'disconnected';
+          toast('Error al conectar: ' + resp.error);
+          render(); return;
+        }
+        // Store token — shared with drive.js if needed
+        S.accessToken   = resp.access_token;
+        S.driveStatus   = 'connected';
+        fetchGSCSites();
+      }
+    });
+  }
+
+  gscTokenClient.requestAccessToken({ prompt: '' });
 }
 
 function fetchGSCSites() {
-  S.gscStatus = 'loading';
-  render();
+  S.gscStatus = 'loading'; render();
   listGSCSites(function(err, sites) {
     if (err) {
       S.gscStatus = 'disconnected';
       toast('Error GSC: ' + (err.message || err));
-      render();
-      return;
+      render(); return;
     }
     S.gscSites  = sites;
     S.gscStatus = 'connected';
-    // Auto-select if only one property
-    if (!S.gscSiteUrl && sites.length === 1) S.gscSiteUrl = sites[0];
-    saveState();
-    render();
+    if (!S.gscSiteUrl && sites.length > 0) S.gscSiteUrl = sites[0];
+    saveState(); render();
     toast('✓ Search Console conectado — ' + sites.length + ' propiedad(es)');
   });
 }
