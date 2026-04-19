@@ -640,72 +640,110 @@ function buildHTML(){
   // ── CONFIGURACIÓN ──
   if(S.tab==='configuración'){
 
-    // ── Search Console card ──
-    var gscSiteOptions = S.gscSites.map(function(s){
-      return '<option value="'+esc(s)+'"'+(s===S.gscSiteUrl?' selected':'')+'>'+esc(s)+'</option>';
-    }).join('');
     var weekOptions = [4,8,12,16].map(function(w){
       return '<option value="'+w+'"'+(w===S.gscWeeks?' selected':'')+'>Últimas '+w+' semanas</option>';
     }).join('');
+    var gscSiteOptions = S.gscSites.map(function(s){
+      return '<option value="'+esc(s)+'"'+(s===S.gscSiteUrl?' selected':'')+'>'+esc(s)+'</option>';
+    }).join('');
 
-    content+=
-    '<div class="setup-card"><h2>Conectar Search Console directamente</h2>'+
-    '<p class="desc">Importa datos en tiempo real desde la API de Google Search Console sin exportar CSVs. '+
-    'Un solo clic de "Conectar con Google" autoriza tanto Search Console como Drive.</p>'+
+    // ── ESTADO: CONECTADO ──
+    if (S.gscStatus === 'connected') {
+      content +=
+      '<div class="setup-card">'+
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:1.2rem">'+
+          '<div style="width:36px;height:36px;background:#DCFCE7;border-radius:50%;display:flex;align-items:center;justify-content:center">'+
+            '<svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:none;stroke:#059669;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round"><polyline points="20 6 9 17 4 12"/></svg>'+
+          '</div>'+
+          '<div><div style="font-weight:700;font-size:15px">Conectado a Google Search Console</div>'+
+          '<div style="font-size:12px;color:#64748B">Los datos se importan directamente — sin CSVs</div></div>'+
+        '</div>'+
 
-    '<div class="step"><div class="step-num">1</div><div class="step-body">Ve a <b>console.cloud.google.com</b> → crea un proyecto → activa la <b>Search Console API</b> y la <b>Google Drive API</b>.</div></div>'+
-    '<div class="step"><div class="step-num">2</div><div class="step-body">Credenciales → Crear credenciales → <b>ID de cliente OAuth 2.0</b> → tipo: <b>Aplicación web</b>.<br>En "Orígenes autorizados de JavaScript" agrega <code>https://jorgeluis666.github.io</code>.</div></div>'+
-    '<div class="step"><div class="step-num">3</div><div class="step-body">Copia el <b>Client ID</b> aquí abajo y pulsa <b>Guardar</b>. Luego pulsa <b>Conectar con Google</b>.</div></div>'+
+        (S.gscSites.length > 1
+          ? '<div style="margin-bottom:1rem"><label style="font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">Propiedad activa</label>'+
+            '<select id="cfg-gscsite" onchange="S.gscSiteUrl=this.value;saveState()" style="width:100%;padding:9px 12px;border:1px solid #E2E8F0;border-radius:8px;font-size:13px;background:#fff">'+gscSiteOptions+'</select></div>'
+          : '<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:10px 14px;margin-bottom:1rem;font-size:13px;color:#334155">'+
+            '<b>Propiedad:</b> '+esc(S.gscSiteUrl||S.gscSites[0]||'—')+'</div>') +
 
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:1rem">'+
-      '<div><label style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px">Client ID de Google OAuth</label>'+
-      '<input id="cfg-clientid" value="'+esc(S.clientId)+'" placeholder="xxxx.apps.googleusercontent.com" style="width:100%"></div>'+
-      '<div><label style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px">Semanas a importar</label>'+
-      '<select id="cfg-gscweeks" style="width:100%;padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px">'+weekOptions+'</select></div>'+
-    '</div>'+
+        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
+          '<div><label style="font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px">Rango</label>'+
+          '<select id="cfg-gscweeks" onchange="S.gscWeeks=parseInt(this.value);saveState()" style="padding:7px 10px;border:1px solid #E2E8F0;border-radius:8px;font-size:13px;background:#fff">'+weekOptions+'</select></div>'+
+          '<button class="btn success" style="margin-top:18px;padding:9px 20px;font-size:13px" onclick="importFromGSC()">'+
+            (S.gscImporting ? '<span class="spinning">↻</span> Importando…' : '↓ Importar semanas')+'</button>'+
+          '<button class="btn btn-sm" style="margin-top:18px;color:#94A3B8" onclick="disconnectDrive();S.gscStatus=\'disconnected\';S.gscSites=[];render()">Desconectar</button>'+
+        '</div>'+
+      '</div>';
 
-    (S.gscStatus==='connected' && S.gscSites.length ?
-      '<div style="margin-top:10px"><label style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px">Propiedad de Search Console</label>'+
-      '<select id="cfg-gscsite" style="width:100%;padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px">'+gscSiteOptions+'</select></div>'
-    : '') +
+    // ── ESTADO: SIN CLIENT ID — primera vez ──
+    } else if (!S.clientId) {
+      content +=
+      '<div class="setup-card">'+
+        '<h2 style="margin-bottom:6px">Conectar Google Search Console</h2>'+
+        '<p class="desc" style="margin-bottom:1.4rem">Para importar datos directamente necesitas un <b>Client ID</b> de Google. Se crea una sola vez y tarda ~3 minutos.</p>'+
 
-    '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
-      '<button class="btn primary" onclick="saveConfig()">Guardar</button>'+
-      (S.clientId
-        ? (S.gscStatus==='connected'
-          ? '<span style="font-size:12px;color:#059669;font-weight:600">✓ Search Console conectado</span>'+
-            '<button class="btn" onclick="importFromGSC()">↓ Importar semanas</button>'
-          : '<button class="btn success" onclick="connectGSC()">'+(S.gscStatus==='loading'?'Cargando…':'Conectar con Google')+'</button>')
-        : '') +
-    '</div></div>'+
+        '<details style="margin-bottom:1.2rem;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:12px 16px">'+
+          '<summary style="cursor:pointer;font-weight:600;font-size:13px;color:#334155;list-style:none">▶ ¿Cómo obtener el Client ID? (3 pasos)</summary>'+
+          '<div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">'+
+            '<div class="step"><div class="step-num">1</div><div class="step-body">Ve a <a href="https://console.cloud.google.com" target="_blank" style="color:var(--brand)">console.cloud.google.com</a> → crea un proyecto → activa la <b>Search Console API</b> y la <b>Drive API</b>.</div></div>'+
+            '<div class="step"><div class="step-num">2</div><div class="step-body">Credenciales → Crear → <b>ID de cliente OAuth 2.0</b> → tipo: <b>Aplicación web</b>.<br>En "Orígenes autorizados" agrega <code>https://jorgeluis666.github.io</code></div></div>'+
+            '<div class="step"><div class="step-num">3</div><div class="step-body">Copia el Client ID y pégalo abajo.</div></div>'+
+          '</div>'+
+        '</details>'+
 
-    // ── Drive card ──
-    '<div class="setup-card" style="margin-top:1rem"><h2>Conectar Google Drive (CSV automático)</h2>'+
-    '<p class="desc">Alternativa a la API directa: sube los exports CSV de GSC a una carpeta de Drive y el dashboard los importa automáticamente.</p>'+
+        '<label style="font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">Client ID de Google OAuth</label>'+
+        '<input id="cfg-clientid" value="" placeholder="xxxx.apps.googleusercontent.com" style="width:100%;margin-bottom:12px">'+
+        '<button class="btn primary" onclick="saveConfig()">Guardar y continuar →</button>'+
+      '</div>';
 
-    '<div class="step"><div class="step-num">4</div><div class="step-body">En tu Google Drive crea una carpeta <b>GSC-Lima-Retail</b>. Sube CSVs con el formato <code>PERIODO_Tipo.csv</code> (ej: <code>2026-W14_Consultas.csv</code>).</div></div>'+
-    '<div class="step"><div class="step-num">5</div><div class="step-body">Abre la carpeta en Drive. Copia el ID de la URL: <code>drive.google.com/drive/folders/<b>ESTE_ES_EL_ID</b></code></div></div>'+
+    // ── ESTADO: TIENE CLIENT ID, NO CONECTADO ──
+    } else {
+      content +=
+      '<div class="setup-card" style="text-align:center;padding:2.5rem 2rem">'+
+        '<div style="width:56px;height:56px;background:#EFF6FF;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem">'+
+          '<svg viewBox="0 0 24 24" style="width:26px;height:26px;fill:none;stroke:#2563EB;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'+
+        '</div>'+
+        '<div style="font-weight:700;font-size:16px;margin-bottom:6px">Importar desde Search Console</div>'+
+        '<div style="font-size:13px;color:#64748B;margin-bottom:1.8rem">Conecta tu cuenta de Google para importar<br>los datos de GSC directamente al dashboard</div>'+
+        '<button onclick="connectGSC()" style="display:inline-flex;align-items:center;gap:10px;background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:12px 24px;font-size:14px;font-weight:600;color:#334155;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.08)" '+(S.gscStatus==='loading'?'disabled':'')+'>'+
+          (S.gscStatus==='loading'
+            ? '<span class="spinning" style="font-size:16px">↻</span> Cargando…'
+            : '<svg viewBox="0 0 24 24" style="width:20px;height:20px"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>'+
+              'Conectar con Google') +
+        '</button>'+
+        '<div style="margin-top:1.4rem">'+
+          '<details style="display:inline-block;text-align:left">'+
+            '<summary style="cursor:pointer;font-size:11px;color:#94A3B8;list-style:none">⚙ Cambiar Client ID</summary>'+
+            '<div style="margin-top:8px;display:flex;gap:8px">'+
+              '<input id="cfg-clientid" value="'+esc(S.clientId)+'" style="font-size:12px;padding:6px 10px;border:1px solid #E2E8F0;border-radius:6px;width:320px">'+
+              '<button class="btn btn-sm" onclick="saveConfig()">Guardar</button>'+
+            '</div>'+
+          '</details>'+
+        '</div>'+
+      '</div>';
+    }
 
-    '<div style="margin-top:1rem">'+
-      '<label style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px">ID de la carpeta raíz en Drive</label>'+
-      '<input id="cfg-folderid" value="'+esc(S.folderId)+'" placeholder="1ABCdef..." style="width:100%">'+
-    '</div>'+
-    '<div style="margin-top:10px;display:flex;gap:8px">'+
-      '<button class="btn primary" onclick="saveConfig()">Guardar</button>'+
-      (S.clientId&&S.folderId
-        ? '<button class="btn success" onclick="connectDrive()">'+(S.driveStatus==='connected'?'✓ Drive conectado':'Conectar Drive')+'</button>'
-        : '')+
-    '</div>'+
-
-    '<div style="background:#f2f2f0;border-radius:8px;padding:1rem;font-family:monospace;font-size:12px;line-height:1.8;margin-top:1rem">'+
-      '📁 GSC-Lima-Retail/ <span style="color:#888">(pega el ID arriba)</span><br>'+
-      '&nbsp;&nbsp;📄 2026-W14_Consultas.csv<br>'+
-      '&nbsp;&nbsp;📄 2026-W14_Páginas.csv<br>'+
-      '&nbsp;&nbsp;📄 2026-W14_Gráfico.csv<br>'+
-      '&nbsp;&nbsp;📄 2026-W14_Dispositivos.csv<br>'+
-      '&nbsp;&nbsp;📄 2026-W14_Países.csv<br>'+
-      '&nbsp;&nbsp;📄 2026-W15_Consultas.csv <span style="color:#888">(semana siguiente)</span><br>'+
-    '</div></div>';
+    // ── Drive (colapsado al final) ──
+    content +=
+    '<details style="margin-top:1rem" '+(S.folderId?'open':'')+'>'+
+      '<summary style="cursor:pointer;padding:12px 16px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;font-size:13px;font-weight:600;color:#64748B;list-style:none">'+
+        '📁 Alternativa: Google Drive (importar CSVs)'+
+      '</summary>'+
+      '<div class="setup-card" style="margin-top:6px;border-radius:8px">'+
+        '<p class="desc">Sube los exports CSV de GSC a una carpeta de Drive y el dashboard los detecta automáticamente.</p>'+
+        '<label style="font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">ID de la carpeta en Drive</label>'+
+        '<div style="display:flex;gap:8px;margin-bottom:10px">'+
+          '<input id="cfg-folderid" value="'+esc(S.folderId)+'" placeholder="Pega el ID de la carpeta…" style="flex:1">'+
+          '<button class="btn primary" onclick="saveConfig()">Guardar</button>'+
+          (S.clientId&&S.folderId ? '<button class="btn success" onclick="connectDrive()">'+(S.driveStatus==='connected'?'✓ Conectado':'Conectar Drive')+'</button>' : '')+
+        '</div>'+
+        '<div style="background:#F1F5F9;border-radius:6px;padding:.8rem;font-family:monospace;font-size:11px;color:#64748B;line-height:1.8">'+
+          '📁 GSC-Lima-Retail/<br>'+
+          '&nbsp;&nbsp;📄 2026-W14_Consultas.csv<br>'+
+          '&nbsp;&nbsp;📄 2026-W14_Páginas.csv<br>'+
+          '&nbsp;&nbsp;📄 2026-W14_Gráfico.csv  …'+
+        '</div>'+
+      '</div>'+
+    '</details>';
 
     return '<div class="shell">'+sidebar+'<main class="main">'+topbar+'<div class="content">'+content+'</div></main></div>';
   }
