@@ -269,3 +269,20 @@ function fetchGSCSites() {
     toast('✓ Search Console conectado — ' + sites.length + ' propiedad(es)');
   });
 }
+
+// ── SWITCH PROPERTY — clear snapshots and re-import ──────
+function switchGSCProperty(newSiteUrl) {
+  if (!newSiteUrl || newSiteUrl === S.gscSiteUrl) return;
+  var hasSnaps = S.snapshots.some(function(s){ return s.gscSource; });
+  if (hasSnaps) {
+    if (!confirm('Cambiar de propiedad borrará los ' + S.snapshots.length + ' snapshots actuales e importará los de "' + newSiteUrl + '".\n\n¿Continuar?')) {
+      render(); return; // revert selector visually
+    }
+    S.snapshots = [];
+    S.curIdx = null;
+  }
+  S.gscSiteUrl = newSiteUrl;
+  saveState();
+  render();
+  toast('Propiedad cambiada a ' + newSiteUrl + ' — pulsa "↓ Importar semanas"');
+}

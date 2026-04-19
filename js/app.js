@@ -695,7 +695,7 @@ function buildHTML(){
 
         (S.gscSites.length > 1
           ? '<div style="margin-bottom:1rem"><label style="font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">Propiedad activa</label>'+
-            '<select id="cfg-gscsite" onchange="S.gscSiteUrl=this.value;saveState()" style="width:100%;padding:9px 12px;border:1px solid #E2E8F0;border-radius:8px;font-size:13px;background:#fff">'+gscSiteOptions+'</select></div>'
+            '<select id="cfg-gscsite" onchange="switchGSCProperty(this.value)" style="width:100%;padding:9px 12px;border:1px solid #E2E8F0;border-radius:8px;font-size:13px;background:#fff">'+gscSiteOptions+'</select></div>'
           : '<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:10px 14px;margin-bottom:1rem;font-size:13px;color:#334155">'+
             '<b>Propiedad:</b> '+esc(S.gscSiteUrl||S.gscSites[0]||'—')+'</div>') +
 
