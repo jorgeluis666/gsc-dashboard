@@ -627,14 +627,48 @@ function buildHTML(){
   // ── CONTENT ──
   var content = '';
 
-  // ── SIN DATOS ──
+  // ── SIN DATOS — pantalla de bienvenida ──
   if(!hasSnaps && S.tab !== 'configuración' && S.tab !== 'snapshots'){
-    content='<div class="drop" id="drop-zone" style="margin-top:2rem">'+
-      '<h2>Sube tus CSVs de Google Search Console</h2>'+
-      '<p>Arrastra aquí los archivos o pulsa "↑ Subir CSV" arriba</p>'+
-      '<p style="margin-top:8px;font-size:11px;color:var(--muted)">Acepta exports de comparación semanal: Consultas, Páginas, Gráfico, Dispositivos, Países</p>'+
-    '</div>';
-    return '<div class="shell">'+sidebar+'<main class="main">'+topbar+'<div class="content">'+content+'</div></main></div>';
+    var connectBlock = S.gscStatus === 'connected'
+      ? '<button onclick="importFromGSC()" style="display:inline-flex;align-items:center;gap:10px;background:#2563EB;color:#fff;border:none;border-radius:12px;padding:14px 32px;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(37,99,235,.35)">'+
+          '<svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:none;stroke:#fff;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="3" x2="12" y2="21"/></svg>'+
+          'Importar datos de Search Console</button>'
+      : '<button onclick="connectGSC()" style="display:inline-flex;align-items:center;gap:12px;background:#fff;border:1.5px solid #E2E8F0;border-radius:12px;padding:14px 32px;font-size:15px;font-weight:700;color:#1E293B;cursor:pointer;box-shadow:0 4px 20px rgba(0,0,0,.08)" '+(S.gscStatus==='loading'?'disabled':'')+'>'+
+          (S.gscStatus==='loading'
+            ? '<span class="spinning" style="font-size:18px">↻</span> Conectando…'
+            : '<svg viewBox="0 0 24 24" style="width:22px;height:22px"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>'+
+              'Conectar con Google') +
+        '</button>';
+
+    content =
+      '<div id="drop-zone" style="min-height:calc(100vh - 56px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;padding:2rem;box-sizing:border-box"'+
+        ' ondragover="event.preventDefault();this.style.background=\'#EFF6FF\'" ondragleave="this.style.background=\'\'" ondrop="event.preventDefault();this.style.background=\'\';processFiles(event.dataTransfer.files)">'+
+
+        '<!-- icon -->'+
+        '<div style="width:72px;height:72px;background:linear-gradient(135deg,#2563EB,#1D4ED8);border-radius:20px;display:flex;align-items:center;justify-content:center;margin-bottom:1.5rem;box-shadow:0 8px 24px rgba(37,99,235,.3)">'+
+          '<svg viewBox="0 0 24 24" style="width:36px;height:36px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>'+
+        '</div>'+
+
+        '<h1 style="font-size:28px;font-weight:800;color:#0F172A;margin:0 0 10px;text-align:center;letter-spacing:-.5px">GSC Dashboard</h1>'+
+        '<p style="font-size:15px;color:#64748B;margin:0 0 2.5rem;text-align:center;max-width:400px;line-height:1.6">'+
+          'Conecta tu cuenta de Google para importar<br>datos de Search Console automáticamente.'+
+        '</p>'+
+
+        connectBlock+
+
+        '<div style="margin-top:2rem;display:flex;align-items:center;gap:12px;width:100%;max-width:340px">'+
+          '<div style="flex:1;height:1px;background:#E2E8F0"></div>'+
+          '<span style="font-size:11px;color:#94A3B8;font-weight:600">O sube CSVs manualmente</span>'+
+          '<div style="flex:1;height:1px;background:#E2E8F0"></div>'+
+        '</div>'+
+
+        '<button onclick="document.getElementById(\'fi\').click()" style="margin-top:1rem;background:none;border:1.5px dashed #CBD5E1;border-radius:10px;padding:12px 28px;font-size:13px;color:#64748B;cursor:pointer;font-weight:500">'+
+          '↑ Subir archivos CSV de GSC'+
+        '</button>'+
+        '<input type="file" id="fi" multiple accept=".csv" style="display:none">'+
+      '</div>';
+
+    return '<div class="shell">'+sidebar+'<main class="main" style="display:flex;flex-direction:column">'+topbar+content+'</main></div>';
   }
 
   // ── CONFIGURACIÓN ──
