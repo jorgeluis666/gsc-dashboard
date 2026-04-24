@@ -554,15 +554,13 @@ function buildHTML(){
 
   var hasSnaps = S.snapshots.length > 0;
   var TABS_DEF = [
-    { id:'overview',       label:'Overview',        group:'Análisis' },
-    { id:'oportunidades',  label:'Oportunidades',   group:'Análisis', hi:true },
-    { id:'consultas',      label:'Consultas',        group:'Análisis' },
-    { id:'transaccionales',label:'Transaccionales',  group:'Análisis' },
-    { id:'seguimiento',    label:'Seguimiento',      group:'Acciones' },
+    { id:'overview',       label:'Overview',         group:'Análisis' },
+    { id:'seguimiento',    label:'Artículos blog',   group:'Análisis' },
     { id:'páginas',        label:'Páginas',          group:'Análisis' },
-    { id:'variación',      label:'Variación',        group:'Análisis', hi:true, req2:true },
+    { id:'oportunidades',  label:'Oportunidades',    group:'Análisis', hi:true },
+    { id:'variación',      label:'Variación',        group:'Acciones', hi:true, req2:true },
     { id:'ideas',          label:'Ideas',            group:'Acciones' },
-    { id:'configuración',  label:'Configuración',    group:'Config' }
+    { id:'configuración',  label:'Configuración',    group:'Configuración' }
   ].filter(function(t){ return !t.req2 || S.snapshots.length > 1; });
 
   // ── SIDEBAR ──
