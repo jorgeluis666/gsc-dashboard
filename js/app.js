@@ -256,6 +256,19 @@ function analyzeVar(cur,prev){
 // series: [{label, values:[numbers], color, dashed, yRight}]
 // labels: [string] — one per data point (x axis)
 // opts: { height, yRightLabel, yLeftLabel, invertRight }
+var MONTHS_ES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+
+function weekLabelToShort(label) {
+  var m = label.match(/^(\d{4})-W(\d{2})$/);
+  if (!m) return label;
+  var year = parseInt(m[1]), week = parseInt(m[2]);
+  var jan4 = new Date(year, 0, 4);
+  var dow = jan4.getDay() || 7;
+  var mon = new Date(jan4);
+  mon.setDate(jan4.getDate() - (dow - 1) + (week - 1) * 7);
+  return mon.getDate() + ' ' + MONTHS_ES[mon.getMonth()];
+}
+
 function svgLineChart(labels, series, opts) {
   opts = opts || {};
   var W = 860, H = opts.height || 180;
@@ -307,12 +320,13 @@ function svgLineChart(labels, series, opts) {
     }
   }
 
-  // X axis labels
+  // X axis labels — convert ISO week to "3 mar", skip every other when dense
+  var skipEvery = n > 12 ? 2 : 1;
   labels.forEach(function(lbl, i) {
+    if (i % skipEvery !== 0 && i !== n - 1) return;
     var x = xOf(i);
-    // Shorten label: take last part after space or dash
-    var short = lbl.split(' ').pop().split('-').pop();
-    svg += '<text x="'+x.toFixed(1)+'" y="'+(H-6)+'" text-anchor="middle" font-size="9" fill="#aaa">'+esc(lbl)+'</text>';
+    var short = weekLabelToShort(lbl);
+    svg += '<text x="'+x.toFixed(1)+'" y="'+(H-6)+'" text-anchor="middle" font-size="9" fill="#aaa">'+esc(short)+'</text>';
   });
 
   // Draw series
@@ -340,12 +354,12 @@ function svgLineChart(labels, series, opts) {
     // Line
     if (pts.length > 1) {
       var lineD = pts.map(function(p,i){ return (i===0?'M':'L')+p.x.toFixed(1)+','+p.y.toFixed(1); }).join(' ');
-      svg += '<path d="'+lineD+'" fill="none" stroke="'+s.color+'" stroke-width="2"'+(s.dashed?' stroke-dasharray="5,3"':'')+' stroke-linejoin="round" stroke-linecap="round"/>';
+      svg += '<path d="'+lineD+'" fill="none" stroke="'+s.color+'" stroke-width="1.5"'+(s.dashed?' stroke-dasharray="5,3"':'')+' stroke-linejoin="round" stroke-linecap="round"/>';
     }
 
     // Dots + value labels
     pts.forEach(function(p) {
-      svg += '<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="4" fill="'+s.color+'" stroke="#fff" stroke-width="1.5"/>';
+      svg += '<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="3" fill="'+s.color+'" stroke="#fff" stroke-width="1"/>';
       var valTxt = s.yRight ? p.v.toFixed(1) : fmtK(Math.round(p.v));
       var ty = p.y - 8;
       if (ty < padT + 10) ty = p.y + 16;
