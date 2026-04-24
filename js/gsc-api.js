@@ -344,7 +344,16 @@ function fetchGSCData() {
     } else {
       S.gscCompareData = null;
       render();
-      toast('✓ ' + (data.paginas||[]).length + ' páginas · ' + range.start + ' → ' + range.end);
+      var n = (data.paginas || []).length;
+      if (n === 0) {
+        var multi = (S.gscSites && S.gscSites.length > 1);
+        toast(multi
+          ? '⚠ "' + S.gscSiteUrl + '" no devolvió datos — elige otra propiedad en Configuración'
+          : '⚠ "' + S.gscSiteUrl + '" no devolvió datos en ' + range.start + ' → ' + range.end);
+        if (multi) { S.tab = 'configuración'; render(); }
+      } else {
+        toast('✓ ' + n + ' páginas · ' + range.start + ' → ' + range.end);
+      }
     }
   });
 }

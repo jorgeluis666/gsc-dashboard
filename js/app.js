@@ -797,6 +797,46 @@ function buildHTML(){
     ? ((S.gscCompareData.startDate||'') + ' – ' + (S.gscCompareData.endDate||''))
     : (prev && prev.label ? prev.label : 'período anterior');
 
+  // ── URL FOCUS HELPERS (shared by Overview, Artículos blog, Páginas) ──
+  var lupaSvg = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
+  function lupaBtnHTML(url) {
+    var safeUrl = (url||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    var focused = S.overviewFocusUrl === url;
+    var bg  = focused ? '#E85249' : 'transparent';
+    var col = focused ? '#fff' : '#94a3b8';
+    var bdr = focused ? '#E85249' : '#e2e8f0';
+    var action = focused
+      ? 'S.overviewFocusUrl=null;S.overviewFocusData=null;render()'
+      : (usingDirect ? 'S.overviewFocusUrl=\''+safeUrl+'\';S.overviewFocusData=null;fetchURLFocus(\''+safeUrl+'\')'
+                     : 'S.overviewFocusUrl=\''+safeUrl+'\';render()');
+    return '<button onclick="'+action+'" title="Ver en gráfico" '+
+      'style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;'+
+      'border:1px solid '+bdr+';border-radius:4px;background:'+bg+';color:'+col+';cursor:pointer;padding:0;vertical-align:middle">'+
+      lupaSvg+'</button>';
+  }
+  function urlFocusChartHTML() {
+    if (!S.overviewFocusUrl) return '';
+    if (usingDirect && !S.overviewFocusData) {
+      fetchURLFocus(S.overviewFocusUrl);
+      return '<div class="panel" style="padding:1rem 1.2rem 0.6rem;margin-bottom:12px"><p style="font-size:10px;color:#aaa;padding:4px 0 6px">Cargando tendencia de URL…</p></div>';
+    }
+    var focusRows = usingDirect ? aggregateByWeek(S.overviewFocusData || []) : [];
+    var ut = usingDirect ? focusRows : buildURLTrend(S.overviewFocusUrl, filteredSnaps());
+    if (!ut.length) return '';
+    var labels = ut.map(function(d){ return d.label; });
+    var series = [
+      { label:'Clics', values: ut.map(function(d){ return d.clics; }), color:'#E85249' },
+      { label:'Impr.', values: ut.map(function(d){ return d.impr;  }), color:'#059669', dashed:true }
+    ];
+    var html = '<div class="panel" style="padding:1rem 1.2rem 0.6rem;margin-bottom:12px">';
+    if (labels.length >= 2) html += svgLineChart(labels, series, { height:200 });
+    html += '<div style="display:flex;align-items:center;gap:10px;padding:4px 0 6px">'+
+      '<span style="font-size:10px;color:#E85249;font-weight:600">'+esc(shortURL(S.overviewFocusUrl))+'</span>'+
+      '<button onclick="S.overviewFocusUrl=null;S.overviewFocusData=null;render()" style="font-size:10px;padding:2px 8px;border:1px solid #ddd;border-radius:12px;background:transparent;cursor:pointer;color:#666">× Cerrar</button>'+
+      '</div></div>';
+    return html;
+  }
+
   var TABS_DEF = [
     { id:'overview',       label:'Overview',         group:'Análisis' },
     { id:'seguimiento',    label:'Artículos blog',   group:'Análisis' },
@@ -872,6 +912,28 @@ function buildHTML(){
     ? '<button class="btn btn-sm" style="background:#059669;color:#fff;border-color:#059669" onclick="fetchGSCData()" '+(S.gscLoading?'disabled':'')+'>'+(S.gscLoading?'<span class="spinning">↻</span> Cargando':'↻ GSC')+'</button>'
     : '';
 
+  // ── Date filter + compare badge (shown in topbar on data tabs) ──
+  var activeRangeLbl = S.overviewRange === 'custom' && S.overviewDateFrom && S.overviewDateTo
+    ? S.overviewDateFrom.slice(5).replace('-','/') + ' – ' + S.overviewDateTo.slice(5).replace('-','/')
+    : (RANGE_LABELS[S.overviewRange] || 'Últimos 3 meses').replace('Últimos ','');
+  var compareLblMap = { previous:'Período anterior', year:'Año anterior', custom:'Personalizado' };
+  var compareBadge = S.compareEnabled
+    ? '<span style="font-size:11px;background:#EFF6FF;color:#1A73E8;border:1px solid #BFDBFE;border-radius:20px;padding:2px 9px;display:inline-flex;align-items:center;gap:6px">'+
+        'vs. '+(compareLblMap[S.compareRange]||'')+
+        '<button onclick="disableCompare()" style="background:none;border:none;cursor:pointer;color:#1A73E8;font-size:13px;line-height:1;padding:0">×</button>'+
+      '</span>'
+    : '';
+  var dateFilterBtn =
+    '<button class="date-range-btn" onclick="openDateModal()">'+
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'+
+      activeRangeLbl+
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>'+
+    '</button>';
+  var DATA_TABS = { overview:1, 'seguimiento':1, 'páginas':1, oportunidades:1, 'variación':1, ideas:1 };
+  var topbarFilters = (DATA_TABS[S.tab] && hasData)
+    ? dateFilterBtn + compareBadge
+    : '';
+
   var topbar = '<div class="topbar">'+
     '<div class="topbar-left">'+
       '<span class="topbar-sep">|</span>'+
@@ -879,6 +941,7 @@ function buildHTML(){
       (S.refreshing?'<span style="font-size:11px;color:var(--muted)">Sincronizando...</span>':'')+
     '</div>'+
     '<div class="topbar-right">'+
+      topbarFilters+
       gscBtn+
       refreshBtn+
       (S.driveStatus==='connected'?'<button class="btn btn-sm" onclick="disconnectDrive()">✕ Drive</button>':'')+
@@ -1062,24 +1125,6 @@ function buildHTML(){
        : (S.curIdx > 0 ? calcM(S.snapshots[S.curIdx-1]) : null));
 
   // ── SHARED: date filter bar ───────────────────────────────
-  var activeRangeLbl = S.overviewRange === 'custom' && S.overviewDateFrom && S.overviewDateTo
-    ? S.overviewDateFrom.slice(5).replace('-','/') + ' – ' + S.overviewDateTo.slice(5).replace('-','/')
-    : (RANGE_LABELS[S.overviewRange] || 'Últimos 3 meses').replace('Últimos ','');
-  var compareLblMap = { previous:'Período anterior', year:'Año anterior', custom:'Personalizado' };
-  var compareBadge = S.compareEnabled
-    ? '<span style="font-size:11px;background:#EFF6FF;color:#1A73E8;border:1px solid #BFDBFE;border-radius:20px;padding:2px 9px;display:inline-flex;align-items:center;gap:6px">'+
-        'vs. '+(compareLblMap[S.compareRange]||'')+
-        '<button onclick="disableCompare()" style="background:none;border:none;cursor:pointer;color:#1A73E8;font-size:13px;line-height:1;padding:0">×</button>'+
-      '</span>'
-    : '';
-  var dateFilterBtn =
-    '<button class="date-range-btn" onclick="openDateModal()">'+
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'+
-      activeRangeLbl+
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>'+
-    '</button>';
-  var dateFilterBar = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'+dateFilterBtn+compareBadge+'</div>';
-
   // ── OVERVIEW ──
   if(S.tab==='overview'){
     function kpiCard(lbl,val,pv,fmt,sfx,inv,iconCls,iconSvg){
@@ -1129,9 +1174,6 @@ function buildHTML(){
     var topDropClics = withDelta.filter(function(r){return r.dClics<0;}).sort(function(a,b){return a.dClics-b.dClics;}).slice(0,8);
     var topDropImpr  = withDelta.filter(function(r){return r.dImpr<0;}).sort(function(a,b){return a.dImpr-b.dImpr;}).slice(0,8);
 
-    // ── Sparkline: clicks trend for a URL ──
-    var lupaIcon = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
-
     function pageRow(r, showDelta, deltaKey, actionType){
       var url = r.url || r['Páginas principales'] || '';
       var clics = r.clics !== undefined ? r.clics : pN(r.Clics);
@@ -1145,17 +1187,6 @@ function buildHTML(){
       }
       var safeUrl = url.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
       var focused = S.overviewFocusUrl === url;
-      var lupaBg  = focused ? '#E85249' : 'transparent';
-      var lupaCol = focused ? '#fff' : '#94a3b8';
-      var lupaBdr = focused ? '#E85249' : '#e2e8f0';
-      var lupaAction = focused
-        ? 'S.overviewFocusUrl=null;S.overviewFocusData=null;render()'
-        : (usingDirect ? 'S.overviewFocusUrl=\''+safeUrl+'\';S.overviewFocusData=null;fetchURLFocus(\''+safeUrl+'\')'
-                       : 'S.overviewFocusUrl=\''+safeUrl+'\';render()');
-      var lupaBtn = '<button onclick="'+lupaAction+'" title="Ver en gráfico" '+
-        'style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;'+
-        'border:1px solid '+lupaBdr+';border-radius:4px;background:'+lupaBg+';color:'+lupaCol+';cursor:pointer;padding:0;vertical-align:middle">'+
-        lupaIcon+'</button>';
       var actionHtml = '';
       if(actionType==='optimizar'){
         actionHtml='<td><button onclick="optimizarPagina(\''+safeUrl+'\')" style="font-size:10px;padding:3px 8px;background:#DC2626;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Optimizar</button></td>';
@@ -1163,7 +1194,7 @@ function buildHTML(){
         actionHtml='<td><button onclick="promoverPagina(\''+safeUrl+'\')" style="font-size:10px;padding:3px 8px;background:#059669;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Promocionar</button></td>';
       }
       return '<tr'+( focused?' style="background:#eff6ff"':'')+'>'+
-        '<td style="width:28px;text-align:center;padding:4px">'+lupaBtn+'</td>'+
+        '<td style="width:28px;text-align:center;padding:4px">'+lupaBtnHTML(url)+'</td>'+
         '<td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(shortURL(url))+'</td>'+
         '<td class="r">'+Math.round(clics).toLocaleString()+'</td>'+
         '<td class="r">'+fmtK(impr)+'</td>'+
@@ -1195,10 +1226,6 @@ function buildHTML(){
     var ctd = usingDirect
       ? (S.gscCompareData ? aggregateByWeek(S.gscCompareData.grafico || []) : [])
       : (compareSnaps().length ? buildTrendData(compareSnaps()) : []);
-
-    // ── Filter bar (top-right) ──
-    content += '<div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-bottom:14px">'+
-      dateFilterBtn+compareBadge+'</div>';
 
     // ── Large section cards ──
     function secCard(key, color, iconPath, label, statVal, desc) {
@@ -1430,7 +1457,7 @@ function buildHTML(){
 
   // ── ARTÍCULOS BLOG ──
   if(S.tab==='seguimiento'){
-    content += dateFilterBar;
+    content += urlFocusChartHTML();
     var allPages  = (cur&&cur.data?cur.data.paginas:[]) || [];
     var blogPages = allPages.filter(function(r){ return isBlogArticle(r['Páginas principales']||''); })
                             .sort(function(a,b){ return pN(b.Clics)-pN(a.Clics); });
@@ -1441,13 +1468,14 @@ function buildHTML(){
     } else {
       var pBlog = paretoSplit(blogPages, function(r){ return pN(r.Clics); });
       content += paretoBadge(pBlog.count, blogPages.length);
-      var colsBlog = 5 + (prev ? 3 : 0); // +Δclics +Δimpr +Δpos
+      var colsBlog = 6 + (prev ? 3 : 0); // +lupa +Δclics +Δimpr +Δpos
       var blogRowsHtml = '';
       blogPages.forEach(function(r, i){
         var url   = r['Páginas principales'] || '';
         var pos   = pP(r['Posición']);
         var clics = pN(r.Clics);
         var impr  = pN(r.Impresiones);
+        var focused = S.overviewFocusUrl === url;
         var deltaHtml = '';
         if(prev){
           var pr = prevPages2.find(function(x){ return (x['Páginas principales']||'')===url; });
@@ -1462,7 +1490,8 @@ function buildHTML(){
                       dCell(impr,  pr?pN(pr.Impresiones):0, fmtK) +
                       dCell(pos,   pr?pP(pr['Posición']):0, function(v){return v.toFixed(1);}, true);
         }
-        blogRowsHtml+='<tr>'+
+        blogRowsHtml+='<tr'+(focused?' style="background:#eff6ff"':'')+'>'+
+          '<td style="width:28px;text-align:center;padding:4px">'+lupaBtnHTML(url)+'</td>'+
           '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(shortURL(url))+'</td>'+
           '<td class="r">'+Math.round(clics).toLocaleString()+'</td>'+
           '<td class="r">'+fmtK(impr)+'</td>'+
@@ -1474,6 +1503,7 @@ function buildHTML(){
       });
 
       content+='<div class="panel-table"><table><thead><tr>'+
+        '<th style="width:28px"></th>'+
         '<th>Artículo</th>'+
         '<th class="r">Clics</th>'+
         '<th class="r">Impr.</th>'+
@@ -1593,16 +1623,18 @@ function buildHTML(){
 
   // ── PÁGINAS ──
   if(S.tab==='páginas'){
-    content += dateFilterBar;
+    content += urlFocusChartHTML();
     var nonArticlePages=((cur&&cur.data?cur.data.paginas:[])||[]).filter(function(r){return!isBlogArticle(r['Páginas principales']||'');}).sort(function(a,b){return pN(b.Clics)-pN(a.Clics);});
     var prevPagesNAP = prev ? ((prev&&prev.data?prev.data.paginas:[])||[]) : [];
     var pNAP = paretoSplit(nonArticlePages, function(r){ return pN(r.Clics); });
     if(pNAP.count>0 && nonArticlePages.length>0) content += paretoBadge(pNAP.count, nonArticlePages.length);
-    var colsNAP = 5 + (prev ? 3 : 0);
+    var colsNAP = 6 + (prev ? 3 : 0);
     var napRows = '';
     nonArticlePages.forEach(function(r,i){
       var url=r['Páginas principales']||''; var svc=isSvc(url); var pos=pP(r['Posición']);
       var clics=pN(r.Clics); var impr=pN(r.Impresiones);
+      var focused = S.overviewFocusUrl === url;
+      var rowBg = focused ? '#eff6ff' : (svc ? 'rgba(216,90,48,0.04)' : 'transparent');
       var napDelta = '';
       if(prev){
         var pr2 = prevPagesNAP.find(function(x){ return (x['Páginas principales']||'')===url; });
@@ -1616,14 +1648,15 @@ function buildHTML(){
                    dCellNAP(impr,  pr2?pN(pr2.Impresiones):0, fmtK) +
                    dCellNAP(pos,   pr2?pP(pr2['Posición']):0, function(v){return v.toFixed(1);}, true);
       }
-      napRows+='<tr style="background:'+(svc?'rgba(216,90,48,0.04)':'transparent')+'">'+
+      napRows+='<tr style="background:'+rowBg+'">'+
+        '<td style="width:28px;text-align:center;padding:4px">'+lupaBtnHTML(url)+'</td>'+
         '<td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(svc?'<span class="dot dot-red"></span>':'')+esc(shortURL(url))+'</td>'+
         '<td class="r">'+Math.round(clics).toLocaleString()+'</td><td class="r">'+fmtK(impr)+'</td><td class="r">'+r.CTR+'</td>'+
         '<td class="r"><span class="'+posColor(pos)+'">'+pos.toFixed(1)+'</span><span class="pill '+posClass(pos)+'">'+posLbl(pos)+'</span></td>'+
         napDelta+'</tr>';
       if(i===pNAP.count-1 && pNAP.count<nonArticlePages.length) napRows+=paretoSepRow(colsNAP, nonArticlePages.length-pNAP.count);
     });
-    content+='<div class="panel-table"><table><thead><tr><th>URL</th><th class="r">Clics</th><th class="r">Impr.</th><th class="r">CTR</th><th class="r">Posición</th>'+
+    content+='<div class="panel-table"><table><thead><tr><th style="width:28px"></th><th>URL</th><th class="r">Clics</th><th class="r">Impr.</th><th class="r">CTR</th><th class="r">Posición</th>'+
       (prev?'<th class="r">Δ clics</th><th class="r">Δ impr.</th><th class="r">Δ pos</th>':'')+
       '</tr></thead><tbody>'+napRows+'</tbody></table></div>';
     content+='<p style="font-size:10px;color:#aaa;margin-top:6px"><span class="dot dot-red"></span>páginas de servicio</p>';
