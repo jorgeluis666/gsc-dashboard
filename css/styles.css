@@ -264,6 +264,35 @@ td.red{color:var(--red);font-weight:600}
 .period-select:focus{border-color:var(--brand);background:#fff;outline:none}
 
 /* ═══════════════════════════════════════════
+   DATE FILTER MODAL
+═══════════════════════════════════════════ */
+.date-overlay{position:fixed;inset:0;background:rgba(15,23,42,.35);z-index:500;display:flex;align-items:center;justify-content:center}
+.date-modal{background:#fff;border-radius:16px;padding:28px 28px 20px;width:420px;max-width:calc(100vw - 32px);box-shadow:0 20px 60px rgba(15,23,42,.18)}
+.date-modal h3{font-size:18px;font-weight:600;color:#0F172A;margin-bottom:16px;letter-spacing:-.02em}
+.date-modal-tabs{display:flex;gap:0;border-bottom:1px solid #E2E8F0;margin-bottom:20px}
+.date-modal-tab{padding:6px 0;margin-right:24px;font-size:13px;font-weight:500;color:#64748B;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.date-modal-tab.active{color:#1A73E8;border-bottom-color:#1A73E8}
+.date-radio-list{display:flex;flex-direction:column;gap:2px;margin-bottom:16px}
+.date-radio-row{display:flex;align-items:center;gap:10px;padding:9px 4px;cursor:pointer;border-radius:6px}
+.date-radio-row:hover{background:#F8FAFC}
+.date-radio-row input[type=radio]{width:18px;height:18px;accent-color:#1A73E8;cursor:pointer;flex-shrink:0}
+.date-radio-row span{font-size:14px;color:#0F172A}
+.date-custom-inputs{display:flex;gap:12px;margin:8px 0 4px 28px}
+.date-custom-field{flex:1}
+.date-custom-field label{display:block;font-size:10px;font-weight:600;color:#64748B;text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}
+.date-custom-field input[type=date]{width:100%;padding:9px 10px;border:1px solid #CBD5E1;border-radius:8px;font-size:13px;background:#fff;color:#0F172A}
+.date-custom-field input[type=date]:focus{border-color:#1A73E8;outline:none}
+.date-modal-footer{display:flex;justify-content:flex-end;gap:12px;margin-top:20px;padding-top:16px;border-top:1px solid #F1F5F9}
+.date-modal-cancel{background:transparent;border:none;color:#1A73E8;font-size:14px;font-weight:500;cursor:pointer;padding:6px 12px;border-radius:6px}
+.date-modal-cancel:hover{background:#EFF6FF}
+.date-modal-apply{background:#1A73E8;color:#fff;border:none;font-size:14px;font-weight:500;cursor:pointer;padding:6px 20px;border-radius:20px}
+.date-modal-apply:hover{background:#1557B0}
+.date-modal-apply:disabled{opacity:.4;cursor:default}
+.date-range-btn{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;border:1px solid #ddd;background:#fff;font-size:12px;font-weight:500;color:#334155;cursor:pointer;font-family:inherit}
+.date-range-btn:hover{border-color:#94A3B8;background:#F8FAFC}
+.date-range-btn svg{width:12px;height:12px;stroke:#64748B}
+
+/* ═══════════════════════════════════════════
    TOAST
 ═══════════════════════════════════════════ */
 .toast{position:fixed;bottom:24px;right:24px;background:var(--text);color:#fff;font-size:12px;font-weight:500;padding:10px 16px;border-radius:var(--r-sm);z-index:9999;opacity:0;transition:opacity .3s;box-shadow:var(--sh2)}

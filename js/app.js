@@ -26,7 +26,13 @@ var S = {
   refreshing: false,
   overviewSection: 'top',  // top | gained | lost
   overviewFocusUrl: null,  // URL whose trend is shown in the chart, or null = site total
-  overviewRange: '3m'      // 7d | 28d | 3m | 6m | 12m | 16m
+  overviewRange: '3m',     // 7d | 28d | 3m | 6m | 12m | 16m | custom
+  overviewDateFrom: '',    // YYYY-MM-DD for custom range
+  overviewDateTo: '',
+  showDateModal: false,
+  pendingRange: '3m',
+  pendingDateFrom: '',
+  pendingDateTo: ''
 };
 
 // ── PERSIST ──────────────────────────────────────────────
@@ -42,7 +48,9 @@ function loadState() {
       S.folderName  = d.folderName  || '';
       S.gscSiteUrl  = d.gscSiteUrl  || '';
       S.gscWeeks    = d.gscWeeks    || 8;
-      S.overviewRange = d.overviewRange || '3m';
+      S.overviewRange   = d.overviewRange   || '3m';
+      S.overviewDateFrom = d.overviewDateFrom || '';
+      S.overviewDateTo   = d.overviewDateTo   || '';
       if (S.snapshots.length) S.curIdx = S.snapshots.length - 1;
     }
   } catch(e) {}
@@ -58,7 +66,9 @@ function saveState() {
       folderName:  S.folderName,
       gscSiteUrl:  S.gscSiteUrl,
       gscWeeks:    S.gscWeeks,
-      overviewRange: S.overviewRange
+      overviewRange:    S.overviewRange,
+      overviewDateFrom: S.overviewDateFrom,
+      overviewDateTo:   S.overviewDateTo
     }));
   } catch(e) {}
 }
@@ -74,7 +84,8 @@ function toast(msg) {
 var PAID = ["meta ads","facebook ads","google ads","tiktok ads","tik tok ads","agencia meta","agencia google","agencia facebook","agencia tiktok","publicidad en google","publicidad en facebook","publicidad en tiktok","servicio de google ads","consultoría google ads","consultoria google ads","agencia de publicidad","campañas google","campañas meta","campañas facebook","campañas tiktok","agencia ads"];
 var SVCS = ["/agencia-facebook-ads","/agencia-google-ads","/agencia-tik-tok-ads","/agencia-meta-ads","/asesoria-marketing-digital","/campanas-publicitarias-digitales","/agencia-seo","/facebook/meta","/facebook/facebook-ads"];
 var CSV_NAMES = ['gráfico','grafico','consultas','páginas','paginas','dispositivos','países','paises','filtros'];
-var RANGE_WEEKS = { '7d':1, '28d':4, '3m':13, '6m':26, '12m':52, '16m':70 };
+var RANGE_WEEKS  = { '7d':1, '28d':4, '3m':13, '6m':26, '12m':52, '16m':70 };
+var RANGE_LABELS = { '7d':'Últimos 7 días', '28d':'Últimos 28 días', '3m':'Últimos 3 meses', '6m':'Últimos 6 meses', '12m':'Últimos 12 meses', '16m':'Últimos 16 meses', 'custom':'Personalizado' };
 
 // ── HELPERS ──────────────────────────────────────────────
 function pN(v){return parseFloat(String(v||'0').replace(/[%\s]/g,'').replace(',','.'))||0;}
@@ -258,14 +269,20 @@ function analyzeVar(cur,prev){
 // opts: { height, yRightLabel, yLeftLabel, invertRight }
 var MONTHS_ES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
 
-function weekLabelToShort(label) {
+function weekLabelToMonday(label) {
   var m = label.match(/^(\d{4})-W(\d{2})$/);
-  if (!m) return label;
+  if (!m) return null;
   var year = parseInt(m[1]), week = parseInt(m[2]);
   var jan4 = new Date(year, 0, 4);
   var dow = jan4.getDay() || 7;
   var mon = new Date(jan4);
   mon.setDate(jan4.getDate() - (dow - 1) + (week - 1) * 7);
+  return mon;
+}
+
+function weekLabelToShort(label) {
+  var mon = weekLabelToMonday(label);
+  if (!mon) return label;
   return mon.getDate() + ' ' + MONTHS_ES[mon.getMonth()];
 }
 
@@ -404,9 +421,50 @@ function buildURLTrend(url, snaps) {
 }
 
 function filteredSnaps() {
-  var n = RANGE_WEEKS[S.overviewRange] || S.snapshots.length;
   var sorted = S.snapshots.slice().sort(function(a,b){ return a.label.localeCompare(b.label); });
+  if (S.overviewRange === 'custom' && S.overviewDateFrom && S.overviewDateTo) {
+    return sorted.filter(function(snap) {
+      var mon = weekLabelToMonday(snap.label);
+      if (!mon) return false;
+      var d = mon.toISOString().slice(0, 10);
+      return d >= S.overviewDateFrom && d <= S.overviewDateTo;
+    });
+  }
+  var n = RANGE_WEEKS[S.overviewRange] || sorted.length;
   return sorted.slice(-n);
+}
+
+function openDateModal() {
+  S.pendingRange    = S.overviewRange || '3m';
+  S.pendingDateFrom = S.overviewDateFrom || '';
+  S.pendingDateTo   = S.overviewDateTo   || '';
+  S.showDateModal   = true;
+  render();
+}
+
+function setPendingRange(r) {
+  S.pendingRange = r;
+  render();
+}
+
+function applyDateFilter() {
+  var fromEl = document.getElementById('dm-from');
+  var toEl   = document.getElementById('dm-to');
+  if (S.pendingRange === 'custom') {
+    S.overviewDateFrom = fromEl ? fromEl.value : S.pendingDateFrom;
+    S.overviewDateTo   = toEl   ? toEl.value   : S.pendingDateTo;
+    if (!S.overviewDateFrom || !S.overviewDateTo) { toast('Ingresa las dos fechas'); return; }
+  }
+  S.overviewRange   = S.pendingRange;
+  S.showDateModal   = false;
+  if (S.overviewRange !== 'custom') {
+    S.gscWeeks = RANGE_WEEKS[S.overviewRange] || 13;
+    saveState();
+    if (S.gscStatus === 'connected' && S.gscSiteUrl) { importFromGSC(); return; }
+  } else {
+    saveState();
+  }
+  render();
 }
 
 function setOverviewRange(r) {
@@ -976,16 +1034,17 @@ function buildHTML(){
       return '<button onclick="S.overviewSection=\''+key+'\';render()" style="font-size:11px;padding:4px 12px;border-radius:20px;border:1px solid '+bdr+';background:'+bg+';color:'+col+';cursor:pointer">'+label+'</button>';
     }
 
-    var activeRange = S.overviewRange || '3m';
-    var rangeOpts = [['7d','7 días'],['28d','28 días'],['3m','3 meses'],['6m','6 meses'],['12m','12 meses'],['16m','16 meses']];
-    function rangeBtn(key, lbl) {
-      var act = activeRange === key;
-      return '<button onclick="setOverviewRange(\''+key+'\')" style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid '+(act?'#E85249':'#ddd')+';background:'+(act?'#FEF2F2':'transparent')+';color:'+(act?'#E85249':'#888')+';cursor:pointer;font-family:inherit">'+lbl+'</button>';
-    }
+    var activeRangeLbl = S.overviewRange === 'custom' && S.overviewDateFrom && S.overviewDateTo
+      ? S.overviewDateFrom.slice(5).replace('-','/') + ' – ' + S.overviewDateTo.slice(5).replace('-','/')
+      : (RANGE_LABELS[S.overviewRange] || 'Últimos 3 meses').replace('Últimos ','');
     content += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">';
     content += '<p class="sec-lbl" style="margin:0">Evolución por período</p>';
     content += '<div style="display:flex;align-items:center;gap:10px">'+
-      '<div style="display:flex;gap:4px">'+rangeOpts.map(function(r){ return rangeBtn(r[0],r[1]); }).join('')+'</div>'+
+      '<button class="date-range-btn" onclick="openDateModal()">'+
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'+
+        activeRangeLbl+
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>'+
+      '</button>'+
       '<div style="width:1px;height:14px;background:#E2E8F0"></div>'+
       '<div style="display:flex;gap:6px">'+tabBtn('top','Top páginas')+tabBtn('gained','↑ Crecimiento')+tabBtn('lost','↓ Caídas')+'</div>'+
     '</div>';
@@ -1310,7 +1369,50 @@ function buildHTML(){
       '<input type="file" id="fi-snap" multiple accept=".csv" style="display:none"></div>';
   }
 
-  return '<div class="shell">'+sidebar+'<main class="main">'+topbar+'<div class="content">'+content+'</div></main></div>';
+  var dateModal = '';
+  if (S.showDateModal) {
+    var pr = S.pendingRange || '3m';
+    var ranges = [
+      { key:'7d',   lbl:'Últimos 7 días' },
+      { key:'28d',  lbl:'Últimos 28 días' },
+      { key:'3m',   lbl:'Últimos 3 meses' },
+      { key:'6m',   lbl:'Últimos 6 meses' },
+      { key:'12m',  lbl:'Últimos 12 meses' },
+      { key:'16m',  lbl:'Últimos 16 meses' },
+      { key:'custom', lbl:'Personalizado' }
+    ];
+    var radioRows = ranges.map(function(r) {
+      var checked = pr === r.key ? ' checked' : '';
+      return '<label class="date-radio-row">'+
+        '<input type="radio" name="dm-range" value="'+r.key+'" onchange="setPendingRange(\''+r.key+'\')"'+checked+'>'+
+        '<span>'+r.lbl+'</span>'+
+      '</label>';
+    }).join('');
+    var customInputs = pr === 'custom'
+      ? '<div class="date-custom-inputs">'+
+          '<div class="date-custom-field"><label>Fecha de inicio</label><input type="date" id="dm-from" value="'+esc(S.pendingDateFrom)+'"></div>'+
+          '<div style="display:flex;align-items:flex-end;padding-bottom:9px;color:#94A3B8;font-size:16px">–</div>'+
+          '<div class="date-custom-field"><label>Fecha de finalización</label><input type="date" id="dm-to" value="'+esc(S.pendingDateTo)+'"></div>'+
+        '</div>'
+      : '';
+    dateModal =
+      '<div class="date-overlay" onclick="S.showDateModal=false;render()">'+
+        '<div class="date-modal" onclick="event.stopPropagation()">'+
+          '<h3>Intervalo de fechas</h3>'+
+          '<div class="date-modal-tabs">'+
+            '<div class="date-modal-tab active">Filtrar</div>'+
+            '<div class="date-modal-tab" style="opacity:.4;cursor:default">Comparar</div>'+
+          '</div>'+
+          '<div class="date-radio-list">'+radioRows+customInputs+'</div>'+
+          '<div class="date-modal-footer">'+
+            '<button class="date-modal-cancel" onclick="S.showDateModal=false;render()">Cancelar</button>'+
+            '<button class="date-modal-apply" onclick="applyDateFilter()">Aplicar</button>'+
+          '</div>'+
+        '</div>'+
+      '</div>';
+  }
+
+  return '<div class="shell">'+sidebar+'<main class="main">'+topbar+'<div class="content">'+content+'</div></main></div>'+dateModal;
 }
 
 // ── BIND EVENTS ──────────────────────────────────────────
