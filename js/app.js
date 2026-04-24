@@ -31,6 +31,8 @@ var S = {
   refreshing: false,
   overviewSection: 'top',  // top | gained | lost
   overviewFocusUrl: null,  // URL whose trend is shown in the chart, or null = site total
+  ovPageSize: 10,          // páginas por vista en la tabla "Todas las páginas"
+  ovPage: 0,               // índice de página actual (0-based)
   overviewRange: '3m',     // 7d | 28d | 3m | 6m | 12m | 16m | custom
   overviewDateFrom: '',    // YYYY-MM-DD for custom range
   overviewDateTo: '',
@@ -1169,7 +1171,8 @@ function buildHTML(){
       };
     }
     var enriched = pages.map(enrichRow);
-    var topClics = enriched.slice().sort(function(a,b){return b.clics-a.clics;}).slice(0,8);
+    var allSorted = enriched.slice().sort(function(a,b){return b.clics-a.clics;});
+    var topClics = allSorted.slice(0,8);
     var withDelta = enriched.filter(function(r){ return r.dClics !== null; });
     var topGainClics = withDelta.filter(function(r){return r.dClics>0;}).sort(function(a,b){return b.dClics-a.dClics;}).slice(0,8);
     var topGainImpr  = withDelta.filter(function(r){return r.dImpr>0;}).sort(function(a,b){return b.dImpr-a.dImpr;}).slice(0,8);
@@ -1288,7 +1291,7 @@ function buildHTML(){
     content += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px">';
     content += secCard('top', '#E85249',
       '<line x1="18" y1="20" x2="18" y2="4"/><line x1="12" y1="20" x2="12" y2="10"/><line x1="6" y1="20" x2="6" y2="14"/>',
-      'Top páginas', fmtK(curM.clics)+' clics',
+      'Todas las páginas', fmtK(curM.clics)+' clics',
       pages.length+' páginas · '+(usingDirect ? activeRangeLbl : 'período actual'));
     content += secCard('gained', '#059669',
       '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
@@ -1419,9 +1422,44 @@ function buildHTML(){
 
     // ── Table per selected section ──
     if(ovSec==='top'){
-      var pTop = paretoSplit(topClics, function(r){ return r.clics; });
-      if(pTop.count > 0 && pages.length > 0) content += paretoBadge(pTop.count, pages.length);
-      content += pageTable(topClics, !!prev, 'auto', pTop.count);
+      var pTopAll = paretoSplit(allSorted, function(r){ return r.clics; });
+      if(pTopAll.count > 0 && pages.length > 0) content += paretoBadge(pTopAll.count, pages.length);
+
+      var pageSize = S.ovPageSize || 10;
+      var total    = allSorted.length;
+      var maxPage  = Math.max(0, Math.ceil(total / pageSize) - 1);
+      if (S.ovPage > maxPage) S.ovPage = maxPage;
+      if (S.ovPage < 0) S.ovPage = 0;
+      var start    = S.ovPage * pageSize;
+      var end      = Math.min(start + pageSize, total);
+      var pageRows = allSorted.slice(start, end);
+      var paretoForPage = (pTopAll.count > start && pTopAll.count <= end) ? (pTopAll.count - start) : null;
+
+      var sizeOpts = [10, 25, 50, 100].map(function(n){
+        return '<option value="'+n+'"'+(n===pageSize?' selected':'')+'>'+n+' por página</option>';
+      }).join('');
+      var sizeSel = '<select onchange="S.ovPageSize=parseInt(this.value,10);S.ovPage=0;render()" style="font-size:11px;padding:4px 8px;border:1px solid #E2E8F0;border-radius:6px;background:#fff;cursor:pointer">'+sizeOpts+'</select>';
+
+      content += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0 6px">'+
+        '<div style="font-size:11px;color:#64748B">Mostrando <b>'+(total?(start+1):0)+'–'+end+'</b> de <b>'+total+'</b> páginas</div>'+
+        '<div style="display:flex;align-items:center;gap:8px">'+sizeSel+'</div>'+
+      '</div>';
+
+      content += pageTable(pageRows, !!prev, 'auto', paretoForPage);
+
+      function pgBtn(label, targetPage, disabled){
+        var style = 'font-size:11px;padding:5px 10px;border:1px solid #E2E8F0;border-radius:6px;background:#fff;cursor:'+(disabled?'not-allowed':'pointer')+';color:'+(disabled?'#CBD5E1':'#334155');
+        return '<button '+(disabled?'disabled':'onclick="S.ovPage='+targetPage+';render()"')+' style="'+style+'">'+label+'</button>';
+      }
+      var curPage = S.ovPage + 1;
+      var totalPages = maxPage + 1;
+      content += '<div style="display:flex;align-items:center;justify-content:center;gap:6px;margin:10px 0 4px;flex-wrap:wrap">'+
+        pgBtn('« Primera', 0, S.ovPage===0)+
+        pgBtn('‹ Anterior', S.ovPage-1, S.ovPage===0)+
+        '<span style="font-size:11px;color:#334155;padding:0 8px">Página <b>'+curPage+'</b> de <b>'+totalPages+'</b></span>'+
+        pgBtn('Siguiente ›', S.ovPage+1, S.ovPage>=maxPage)+
+        pgBtn('Última »', maxPage, S.ovPage>=maxPage)+
+      '</div>';
     } else if(ovSec==='gained'){
       if(!prev){
         content += '<div class="insight info" style="margin-top:8px">Activa la comparación de período (botón de calendario arriba) para ver qué páginas están creciendo.</div>';
