@@ -585,8 +585,7 @@ function buildHTML(){
 
   var sidebar = '<aside class="sidebar">'+
     '<div class="s-brand">'+
-      '<div class="s-title">GSC Dashboard</div>'+
-      '<div class="s-sub">Lima Retail</div>'+
+      '<div class="s-title">Content <b>SEO</b> Booster</div>'+
     '</div>'+
     sidebarItems+
     '<div style="flex:1"></div>'+
@@ -667,7 +666,7 @@ function buildHTML(){
           '<svg viewBox="0 0 24 24" style="width:36px;height:36px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>'+
         '</div>'+
 
-        '<h1 style="font-size:28px;font-weight:800;color:#0F172A;margin:0 0 10px;text-align:center;letter-spacing:-.5px">GSC Dashboard</h1>'+
+        '<h1 style="font-size:28px;font-weight:800;color:#0F172A;margin:0 0 10px;text-align:center;letter-spacing:-.5px">Content <span style="color:#2563EB">SEO</span> Booster</h1>'+
         '<p style="font-size:15px;color:#64748B;margin:0 0 2.5rem;text-align:center;max-width:400px;line-height:1.6">'+
           'Conecta tu cuenta de Google para importar<br>datos de Search Console automáticamente.'+
         '</p>'+

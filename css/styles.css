@@ -36,10 +36,11 @@ button,input,select,textarea{font-family:inherit}
 .shell{min-height:100vh;display:flex}
 
 /* Sidebar */
-.sidebar{width:232px;min-width:232px;background:var(--sidebar-bg);color:var(--sidebar-text);display:flex;flex-direction:column;position:sticky;top:0;max-height:100vh;overflow-y:auto}
-.s-brand{padding:20px 20px 16px;border-bottom:1px solid rgba(255,255,255,.06);margin-bottom:6px;flex-shrink:0}
-.s-title{font-size:14px;font-weight:600;color:#fff;letter-spacing:-.01em}
-.s-sub{font-size:11px;color:#64748B;margin-top:2px}
+.sidebar{width:220px;min-width:220px;background:var(--sidebar-bg);color:var(--sidebar-text);display:flex;flex-direction:column;position:sticky;top:0;max-height:100vh;overflow-y:auto}
+.s-brand{height:57px;padding:0 20px;border-bottom:1px solid var(--border);margin-bottom:6px;flex-shrink:0;background:#fff;display:flex;align-items:center;box-shadow:0 1px 3px rgba(15,23,42,.06)}
+.s-title{font-size:15px;font-weight:700;color:var(--text);letter-spacing:-.02em;white-space:nowrap;line-height:1.2}
+.s-title b{color:var(--brand);font-weight:700}
+.s-sub{display:none}
 .s-group-lbl{font-size:10px;text-transform:uppercase;color:var(--sidebar-muted);letter-spacing:.08em;padding:10px 20px 4px;font-weight:600}
 .s-item{display:flex;align-items:center;gap:9px;padding:7px 12px;margin:1px 8px;border-radius:var(--r-sm);color:var(--sidebar-text);font-size:12px;cursor:pointer;transition:background .15s;user-select:none;border:none;background:transparent;width:calc(100% - 16px);text-align:left}
 .s-item:hover{background:rgba(255,255,255,.06);color:#fff}
@@ -54,9 +55,9 @@ button,input,select,textarea{font-family:inherit}
 .main{flex:1;overflow-y:auto;display:flex;flex-direction:column;min-width:0}
 
 /* Topbar */
-.topbar{padding:13px 28px;background:#fff;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:16px;flex-shrink:0;position:sticky;top:0;z-index:10;box-shadow:var(--sh)}
+.topbar{padding:0 28px;height:57px;background:#fff;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:16px;flex-shrink:0;position:sticky;top:0;z-index:10;box-shadow:0 1px 3px rgba(15,23,42,.06)}
 .topbar-left{display:flex;align-items:center;gap:12px;min-width:0}
-.topbar-title{font-size:14px;font-weight:600;color:var(--text);letter-spacing:-.01em;white-space:nowrap}
+.topbar-title{font-size:13px;font-weight:600;color:var(--text-2);letter-spacing:-.01em;white-space:nowrap}
 .topbar-right{display:flex;gap:8px;align-items:center;flex-shrink:0}
 
 /* Content area */
