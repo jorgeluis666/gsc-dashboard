@@ -271,6 +271,35 @@ function deleteSnap(idx){
   saveState();render();
 }
 
+// ── PARETO ───────────────────────────────────────────────
+// Returns { top, rest, count, total } — rows already sorted descending by getValue
+function paretoSplit(rows, getValue) {
+  var total = rows.reduce(function(s, r) { return s + getValue(r); }, 0);
+  if (!total || !rows.length) return { top: rows, rest: [], count: rows.length, total: 0 };
+  var cum = 0, idx = rows.length;
+  for (var i = 0; i < rows.length; i++) {
+    cum += getValue(rows[i]);
+    if (cum / total >= 0.8) { idx = i + 1; break; }
+  }
+  return { top: rows.slice(0, idx), rest: rows.slice(idx), count: idx, total: total };
+}
+
+function paretoBadge(count, totalRows) {
+  return '<div style="display:inline-flex;align-items:center;gap:6px;background:#F0FDF4;border:1px solid #BBF7D0;'+
+    'border-radius:8px;padding:4px 12px;font-size:11px;color:#059669;font-weight:600;margin-bottom:8px">'+
+    '<svg viewBox="0 0 24 24" style="width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round">'+
+    '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'+
+    '<b>'+count+'</b> página'+(count===1?'':'s')+' = 80% del tráfico'+
+    '<span style="font-weight:400;color:#6EE7B7">· '+totalRows+' total</span></div>';
+}
+
+function paretoSepRow(colspan, restCount) {
+  return '<tr><td colspan="'+colspan+'" style="background:#F0FDF4;border-top:2px dashed #6EE7B7;'+
+    'border-bottom:1px solid #D1FAE5;padding:3px 12px;font-size:9px;color:#059669;font-weight:700;'+
+    'text-align:center;letter-spacing:.04em">'+
+    '▲ 80% DEL TRÁFICO &nbsp;·&nbsp; ▼ '+restCount+' página'+(restCount===1?'':' restante')+(restCount===1?'':'s')+'</td></tr>';
+}
+
 // ── ANALYSIS ─────────────────────────────────────────────
 function analyzeOpp(cur){
   var Q=(cur&&cur.data?cur.data.consultas:[])||[],P=(cur&&cur.data?cur.data.paginas:[])||[];
@@ -1137,13 +1166,21 @@ function buildHTML(){
     var snapLast  = S.snapshots.length ? S.snapshots[S.snapshots.length-1].label : '';
     var sparkHeader = '<th style="text-align:center;font-size:10px;color:#aaa;font-weight:500">'+snapFirst+' → '+snapLast+'</th>';
 
-    function pageTable(rows, showDelta, deltaKey, actionType){
+    function pageTable(rows, showDelta, deltaKey, actionType, paretoIdx){
       if(!rows.length) return '<div class="insight info" style="margin-top:8px">No hay datos para este período.</div>';
       var extraTh = showDelta ? '<th class="r">Δ clics</th>' : '';
       var actionTh = actionType ? '<th></th>' : '';
+      var colCount = 5 + (showDelta?1:0) + (actionType?1:0); // lupa+Página+Clics+Impr+spark + optionals
+      var rowHtml = '';
+      rows.forEach(function(r, i) {
+        rowHtml += pageRow(r, showDelta, deltaKey, actionType);
+        if (paretoIdx && i === paretoIdx - 1 && paretoIdx < rows.length) {
+          rowHtml += paretoSepRow(colCount, rows.length - paretoIdx);
+        }
+      });
       return '<div class="panel-table" style="margin-top:8px"><table>'+
         '<thead><tr><th style="width:28px"></th><th>Página</th><th class="r">Clics</th><th class="r">Impr.</th>'+extraTh+sparkHeader+actionTh+'</tr></thead>'+
-        '<tbody>'+rows.map(function(r){return pageRow(r,showDelta,deltaKey,actionType);}).join('')+'</tbody></table></div>';
+        '<tbody>'+rowHtml+'</tbody></table></div>';
     }
 
     // ── Tab buttons + trend chart ──
@@ -1234,7 +1271,9 @@ function buildHTML(){
 
     // ── Table per selected tab ──
     if(ovSec==='top'){
-      content += pageTable(topClics, false, '', null);
+      var pTop = paretoSplit(topClics, function(r){ return r.clics !== undefined ? r.clics : pN(r.Clics); });
+      if(pTop.count > 0 && pages.length > 0) content += paretoBadge(pTop.count, pages.length);
+      content += pageTable(topClics, false, '', null, pTop.count);
     } else if(ovSec==='gained'){
       if(!prev){
         content += '<div class="insight info" style="margin-top:8px">Necesitas al menos 2 períodos para ver variaciones.</div>';
@@ -1363,16 +1402,11 @@ function buildHTML(){
     if(!blogPages.length){
       content+='<div class="insight info">No hay artículos de blog en este período.</div>';
     } else {
-      content+='<div class="panel-table"><table><thead><tr>'+
-        '<th>Artículo</th>'+
-        '<th class="r">Clics</th>'+
-        '<th class="r">Impr.</th>'+
-        '<th class="r">CTR</th>'+
-        '<th class="r">Posición</th>'+
-        (prev?'<th class="r">Δ clics</th>':'')+
-      '</tr></thead><tbody>';
-
-      blogPages.forEach(function(r){
+      var pBlog = paretoSplit(blogPages, function(r){ return pN(r.Clics); });
+      content += paretoBadge(pBlog.count, blogPages.length);
+      var colsBlog = 5 + (prev?1:0);
+      var blogRowsHtml = '';
+      blogPages.forEach(function(r, i){
         var url  = r['Páginas principales'] || '';
         var pos  = pP(r['Posición']);
         var clics = pN(r.Clics);
@@ -1385,7 +1419,7 @@ function buildHTML(){
                   : d<0  ? '<td class="r"><span class="dn">↓'+Math.round(Math.abs(d))+'</span></td>'
                   : '<td class="r gray">=</td>';
         }
-        content+='<tr>'+
+        blogRowsHtml+='<tr>'+
           '<td style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(shortURL(url))+'</td>'+
           '<td class="r">'+Math.round(clics).toLocaleString()+'</td>'+
           '<td class="r">'+fmtK(pN(r.Impresiones))+'</td>'+
@@ -1393,9 +1427,17 @@ function buildHTML(){
           '<td class="r"><span class="'+posColor(pos)+'">'+pos.toFixed(1)+'</span><span class="pill '+posClass(pos)+'">'+posLbl(pos)+'</span></td>'+
           dHtml+
         '</tr>';
+        if(i===pBlog.count-1 && pBlog.count<blogPages.length) blogRowsHtml+=paretoSepRow(colsBlog, blogPages.length-pBlog.count);
       });
 
-      content+='</tbody></table></div>';
+      content+='<div class="panel-table"><table><thead><tr>'+
+        '<th>Artículo</th>'+
+        '<th class="r">Clics</th>'+
+        '<th class="r">Impr.</th>'+
+        '<th class="r">CTR</th>'+
+        '<th class="r">Posición</th>'+
+        (prev?'<th class="r">Δ clics</th>':'')+
+      '</tr></thead><tbody>'+blogRowsHtml+'</tbody></table></div>';
       content+='<p style="font-size:10px;color:#aaa;margin-top:6px">'+blogPages.length+' artículos detectados (URLs con 2+ segmentos de ruta)</p>';
     }
   }
@@ -1509,9 +1551,18 @@ function buildHTML(){
   // ── PÁGINAS ──
   if(S.tab==='páginas'){
     var nonArticlePages=((cur&&cur.data?cur.data.paginas:[])||[]).filter(function(r){return!isBlogArticle(r['Páginas principales']||'');}).sort(function(a,b){return pN(b.Clics)-pN(a.Clics);});
-    content+='<div class="panel-table"><table><thead><tr><th>URL</th><th class="r">Clics</th><th class="r">Impr.</th><th class="r">CTR</th><th class="r">Posición</th></tr></thead><tbody>'+
-      nonArticlePages.map(function(r){var url=r['Páginas principales']||'';var svc=isSvc(url);var pos=pP(r['Posición']);return'<tr style="background:'+(svc?'rgba(216,90,48,0.04)':'transparent')+'"><td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(svc?'<span class="dot dot-red"></span>':'')+esc(shortURL(url))+'</td><td class="r">'+r.Clics+'</td><td class="r">'+r.Impresiones+'</td><td class="r">'+r.CTR+'</td><td class="r"><span class="'+posColor(pos)+'">'+pos.toFixed(1)+'</span><span class="pill '+posClass(pos)+'">'+posLbl(pos)+'</span></td></tr>';}).join('')+
-      '</tbody></table></div>';
+    var pNAP = paretoSplit(nonArticlePages, function(r){ return pN(r.Clics); });
+    if(pNAP.count>0 && nonArticlePages.length>0) content += paretoBadge(pNAP.count, nonArticlePages.length);
+    var napRows = '';
+    nonArticlePages.forEach(function(r,i){
+      var url=r['Páginas principales']||'';var svc=isSvc(url);var pos=pP(r['Posición']);
+      napRows+='<tr style="background:'+(svc?'rgba(216,90,48,0.04)':'transparent')+'">'+
+        '<td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(svc?'<span class="dot dot-red"></span>':'')+esc(shortURL(url))+'</td>'+
+        '<td class="r">'+r.Clics+'</td><td class="r">'+r.Impresiones+'</td><td class="r">'+r.CTR+'</td>'+
+        '<td class="r"><span class="'+posColor(pos)+'">'+pos.toFixed(1)+'</span><span class="pill '+posClass(pos)+'">'+posLbl(pos)+'</span></td></tr>';
+      if(i===pNAP.count-1 && pNAP.count<nonArticlePages.length) napRows+=paretoSepRow(5, nonArticlePages.length-pNAP.count);
+    });
+    content+='<div class="panel-table"><table><thead><tr><th>URL</th><th class="r">Clics</th><th class="r">Impr.</th><th class="r">CTR</th><th class="r">Posición</th></tr></thead><tbody>'+napRows+'</tbody></table></div>';
     content+='<p style="font-size:10px;color:#aaa;margin-top:6px"><span class="dot dot-red"></span>páginas de servicio</p>';
   }
 
