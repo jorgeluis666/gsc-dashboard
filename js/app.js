@@ -29,10 +29,19 @@ var S = {
   overviewRange: '3m',     // 7d | 28d | 3m | 6m | 12m | 16m | custom
   overviewDateFrom: '',    // YYYY-MM-DD for custom range
   overviewDateTo: '',
+  compareEnabled: false,
+  compareRange: 'previous', // previous | year | custom
+  compareDateFrom: '',
+  compareDateTo: '',
+  // modal temp state (not persisted)
   showDateModal: false,
+  modalTab: 'filtrar',      // filtrar | comparar
   pendingRange: '3m',
   pendingDateFrom: '',
-  pendingDateTo: ''
+  pendingDateTo: '',
+  pendingCompareRange: 'previous',
+  pendingCompareDateFrom: '',
+  pendingCompareDateTo: ''
 };
 
 // ── PERSIST ──────────────────────────────────────────────
@@ -49,8 +58,12 @@ function loadState() {
       S.gscSiteUrl  = d.gscSiteUrl  || '';
       S.gscWeeks    = d.gscWeeks    || 8;
       S.overviewRange   = d.overviewRange   || '3m';
-      S.overviewDateFrom = d.overviewDateFrom || '';
-      S.overviewDateTo   = d.overviewDateTo   || '';
+      S.overviewDateFrom  = d.overviewDateFrom  || '';
+      S.overviewDateTo    = d.overviewDateTo    || '';
+      S.compareEnabled    = d.compareEnabled    || false;
+      S.compareRange      = d.compareRange      || 'previous';
+      S.compareDateFrom   = d.compareDateFrom   || '';
+      S.compareDateTo     = d.compareDateTo     || '';
       if (S.snapshots.length) S.curIdx = S.snapshots.length - 1;
     }
   } catch(e) {}
@@ -68,7 +81,11 @@ function saveState() {
       gscWeeks:    S.gscWeeks,
       overviewRange:    S.overviewRange,
       overviewDateFrom: S.overviewDateFrom,
-      overviewDateTo:   S.overviewDateTo
+      overviewDateTo:   S.overviewDateTo,
+      compareEnabled:   S.compareEnabled,
+      compareRange:     S.compareRange,
+      compareDateFrom:  S.compareDateFrom,
+      compareDateTo:    S.compareDateTo
     }));
   } catch(e) {}
 }
@@ -434,20 +451,70 @@ function filteredSnaps() {
   return sorted.slice(-n);
 }
 
+function compareSnaps() {
+  if (!S.compareEnabled) return [];
+  var mainSnaps = filteredSnaps();
+  if (!mainSnaps.length) return [];
+  var sorted = S.snapshots.slice().sort(function(a,b){ return a.label.localeCompare(b.label); });
+  if (S.compareRange === 'previous') {
+    var n = mainSnaps.length;
+    var firstMainIdx = sorted.findIndex(function(s){ return s.label === mainSnaps[0].label; });
+    return sorted.slice(Math.max(0, firstMainIdx - n), firstMainIdx);
+  }
+  if (S.compareRange === 'year') {
+    return mainSnaps.map(function(snap) {
+      var m = snap.label.match(/^(\d{4})-W(\d{2})$/);
+      if (!m) return null;
+      var prev = (parseInt(m[1]) - 1) + '-W' + m[2];
+      return sorted.find(function(s){ return s.label === prev; }) || null;
+    }).filter(Boolean);
+  }
+  if (S.compareRange === 'custom' && S.compareDateFrom && S.compareDateTo) {
+    return sorted.filter(function(snap) {
+      var mon = weekLabelToMonday(snap.label);
+      if (!mon) return false;
+      var d = mon.toISOString().slice(0, 10);
+      return d >= S.compareDateFrom && d <= S.compareDateTo;
+    });
+  }
+  return [];
+}
+
 function openDateModal() {
-  S.pendingRange    = S.overviewRange || '3m';
-  S.pendingDateFrom = S.overviewDateFrom || '';
-  S.pendingDateTo   = S.overviewDateTo   || '';
-  S.showDateModal   = true;
+  S.pendingRange          = S.overviewRange || '3m';
+  S.pendingDateFrom       = S.overviewDateFrom || '';
+  S.pendingDateTo         = S.overviewDateTo   || '';
+  S.pendingCompareRange   = S.compareRange || 'previous';
+  S.pendingCompareDateFrom = S.compareDateFrom || '';
+  S.pendingCompareDateTo  = S.compareDateTo   || '';
+  S.modalTab              = 'filtrar';
+  S.showDateModal         = true;
   render();
 }
 
-function setPendingRange(r) {
-  S.pendingRange = r;
-  render();
-}
+function setPendingRange(r) { S.pendingRange = r; render(); }
+
+function setPendingModalTab(t) { S.modalTab = t; render(); }
+
+function setPendingCompareRange(r) { S.pendingCompareRange = r; render(); }
+
+function disableCompare() { S.compareEnabled = false; saveState(); render(); }
 
 function applyDateFilter() {
+  if (S.modalTab === 'comparar') {
+    var cfrom = document.getElementById('dm-comp-from');
+    var cto   = document.getElementById('dm-comp-to');
+    S.compareRange = S.pendingCompareRange;
+    if (S.compareRange === 'custom') {
+      S.compareDateFrom = cfrom ? cfrom.value : S.pendingCompareDateFrom;
+      S.compareDateTo   = cto   ? cto.value   : S.pendingCompareDateTo;
+      if (!S.compareDateFrom || !S.compareDateTo) { toast('Ingresa las dos fechas de comparación'); return; }
+    }
+    S.compareEnabled = true;
+    S.showDateModal  = false;
+    saveState(); render(); return;
+  }
+  // ── Filtrar tab ──
   var fromEl = document.getElementById('dm-from');
   var toEl   = document.getElementById('dm-to');
   if (S.pendingRange === 'custom') {
@@ -455,8 +522,8 @@ function applyDateFilter() {
     S.overviewDateTo   = toEl   ? toEl.value   : S.pendingDateTo;
     if (!S.overviewDateFrom || !S.overviewDateTo) { toast('Ingresa las dos fechas'); return; }
   }
-  S.overviewRange   = S.pendingRange;
-  S.showDateModal   = false;
+  S.overviewRange = S.pendingRange;
+  S.showDateModal = false;
   if (S.overviewRange !== 'custom') {
     S.gscWeeks = RANGE_WEEKS[S.overviewRange] || 13;
     saveState();
@@ -1037,20 +1104,29 @@ function buildHTML(){
     var activeRangeLbl = S.overviewRange === 'custom' && S.overviewDateFrom && S.overviewDateTo
       ? S.overviewDateFrom.slice(5).replace('-','/') + ' – ' + S.overviewDateTo.slice(5).replace('-','/')
       : (RANGE_LABELS[S.overviewRange] || 'Últimos 3 meses').replace('Últimos ','');
+    var compareLblMap = { previous:'Período anterior', year:'Año anterior', custom:'Personalizado' };
+    var compareBadge = S.compareEnabled
+      ? ' <span style="font-size:11px;background:#EFF6FF;color:#1A73E8;border:1px solid #BFDBFE;border-radius:20px;padding:2px 9px;display:inline-flex;align-items:center;gap:6px">'+
+          'vs. '+compareLblMap[S.compareRange]+
+          '<button onclick="disableCompare()" style="background:none;border:none;cursor:pointer;color:#1A73E8;font-size:13px;line-height:1;padding:0">×</button>'+
+        '</span>'
+      : '';
     content += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">';
     content += '<p class="sec-lbl" style="margin:0">Evolución por período</p>';
-    content += '<div style="display:flex;align-items:center;gap:10px">'+
+    content += '<div style="display:flex;align-items:center;gap:8px">'+
       '<button class="date-range-btn" onclick="openDateModal()">'+
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'+
         activeRangeLbl+
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>'+
       '</button>'+
+      compareBadge+
       '<div style="width:1px;height:14px;background:#E2E8F0"></div>'+
       '<div style="display:flex;gap:6px">'+tabBtn('top','Top páginas')+tabBtn('gained','↑ Crecimiento')+tabBtn('lost','↓ Caídas')+'</div>'+
     '</div>';
     content += '</div>';
 
-    var fsnaps = filteredSnaps();
+    var fsnaps   = filteredSnaps();
+    var csnaps   = compareSnaps();
     if(fsnaps.length >= 2) {
       var chartLabels, chartSeries, chartFooter;
       if(S.overviewFocusUrl) {
@@ -1074,6 +1150,24 @@ function buildHTML(){
           { label:'Impresiones', values: td.map(function(d){ return d.impr;  }), color:'#059669', dashed:true },
           { label:'Posición',    values: td.map(function(d){ return d.pos;   }), color:'#DC2626', yRight:true }
         ];
+        // Add comparison series if compare is enabled and has data
+        if (csnaps.length >= 1) {
+          var ctd = buildTrendData(csnaps);
+          var maxLen = Math.max(chartLabels.length, ctd.length);
+          // Pad shorter array with nulls so both series share same x-positions
+          function padTo(arr, len) { var a=arr.slice(); while(a.length<len) a.unshift(null); return a; }
+          var mainClics = padTo(td.map(function(d){ return d.clics; }), maxLen);
+          var mainImpr  = padTo(td.map(function(d){ return d.impr;  }), maxLen);
+          var compClics = padTo(ctd.map(function(d){ return d.clics; }), maxLen);
+          var compImpr  = padTo(ctd.map(function(d){ return d.impr;  }), maxLen);
+          chartLabels = padTo(chartLabels, maxLen);
+          chartSeries = [
+            { label:'Clics',       values: mainClics, color:'#E85249' },
+            { label:'Impresiones', values: mainImpr,  color:'#059669', dashed:true },
+            { label:'Clics (ant.)',       values: compClics, color:'rgba(232,82,73,0.4)' },
+            { label:'Impr. (ant.)',       values: compImpr,  color:'rgba(5,150,105,0.4)', dashed:true }
+          ];
+        }
         chartFooter = '<p style="font-size:10px;color:#aaa;padding:4px 0 6px">Posición: eje derecho — valores más bajos = mejor ranking</p>';
       }
       content += '<div class="panel" style="padding:1rem 1.2rem 0.6rem">';
@@ -1371,39 +1465,60 @@ function buildHTML(){
 
   var dateModal = '';
   if (S.showDateModal) {
-    var pr = S.pendingRange || '3m';
-    var ranges = [
-      { key:'7d',   lbl:'Últimos 7 días' },
-      { key:'28d',  lbl:'Últimos 28 días' },
-      { key:'3m',   lbl:'Últimos 3 meses' },
-      { key:'6m',   lbl:'Últimos 6 meses' },
-      { key:'12m',  lbl:'Últimos 12 meses' },
-      { key:'16m',  lbl:'Últimos 16 meses' },
+    var mt  = S.modalTab || 'filtrar';
+    var pr  = S.pendingRange || '3m';
+    var pcr = S.pendingCompareRange || 'previous';
+
+    // ── Filtrar tab content ──
+    var filterRanges = [
+      { key:'7d', lbl:'Últimos 7 días' }, { key:'28d', lbl:'Últimos 28 días' },
+      { key:'3m', lbl:'Últimos 3 meses' }, { key:'6m', lbl:'Últimos 6 meses' },
+      { key:'12m', lbl:'Últimos 12 meses' }, { key:'16m', lbl:'Últimos 16 meses' },
       { key:'custom', lbl:'Personalizado' }
     ];
-    var radioRows = ranges.map(function(r) {
-      var checked = pr === r.key ? ' checked' : '';
+    var filterRows = filterRanges.map(function(r) {
       return '<label class="date-radio-row">'+
-        '<input type="radio" name="dm-range" value="'+r.key+'" onchange="setPendingRange(\''+r.key+'\')"'+checked+'>'+
-        '<span>'+r.lbl+'</span>'+
-      '</label>';
+        '<input type="radio" name="dm-range" value="'+r.key+'" onchange="setPendingRange(\''+r.key+'\')"'+(pr===r.key?' checked':'')+'>'+
+        '<span>'+r.lbl+'</span></label>';
     }).join('');
-    var customInputs = pr === 'custom'
+    var filterCustom = pr === 'custom'
       ? '<div class="date-custom-inputs">'+
           '<div class="date-custom-field"><label>Fecha de inicio</label><input type="date" id="dm-from" value="'+esc(S.pendingDateFrom)+'"></div>'+
           '<div style="display:flex;align-items:flex-end;padding-bottom:9px;color:#94A3B8;font-size:16px">–</div>'+
           '<div class="date-custom-field"><label>Fecha de finalización</label><input type="date" id="dm-to" value="'+esc(S.pendingDateTo)+'"></div>'+
-        '</div>'
-      : '';
+        '</div>' : '';
+
+    // ── Comparar tab content ──
+    var compareRanges = [
+      { key:'previous', lbl:'Período anterior' },
+      { key:'year',     lbl:'Año anterior' },
+      { key:'custom',   lbl:'Personalizado' }
+    ];
+    var compareRows = compareRanges.map(function(r) {
+      return '<label class="date-radio-row">'+
+        '<input type="radio" name="dm-comp" value="'+r.key+'" onchange="setPendingCompareRange(\''+r.key+'\')"'+(pcr===r.key?' checked':'')+'>'+
+        '<span>'+r.lbl+'</span></label>';
+    }).join('');
+    var compareCustom = pcr === 'custom'
+      ? '<div class="date-custom-inputs">'+
+          '<div class="date-custom-field"><label>Fecha de inicio</label><input type="date" id="dm-comp-from" value="'+esc(S.pendingCompareDateFrom)+'"></div>'+
+          '<div style="display:flex;align-items:flex-end;padding-bottom:9px;color:#94A3B8;font-size:16px">–</div>'+
+          '<div class="date-custom-field"><label>Fecha de finalización</label><input type="date" id="dm-comp-to" value="'+esc(S.pendingCompareDateTo)+'"></div>'+
+        '</div>' : '';
+
+    var tabContent = mt === 'comparar'
+      ? '<div class="date-radio-list">'+compareRows+compareCustom+'</div>'
+      : '<div class="date-radio-list">'+filterRows+filterCustom+'</div>';
+
     dateModal =
       '<div class="date-overlay" onclick="S.showDateModal=false;render()">'+
         '<div class="date-modal" onclick="event.stopPropagation()">'+
           '<h3>Intervalo de fechas</h3>'+
           '<div class="date-modal-tabs">'+
-            '<div class="date-modal-tab active">Filtrar</div>'+
-            '<div class="date-modal-tab" style="opacity:.4;cursor:default">Comparar</div>'+
+            '<div class="date-modal-tab'+(mt==='filtrar'?' active':'')+'" onclick="setPendingModalTab(\'filtrar\')">Filtrar</div>'+
+            '<div class="date-modal-tab'+(mt==='comparar'?' active':'')+'" onclick="setPendingModalTab(\'comparar\')">Comparar</div>'+
           '</div>'+
-          '<div class="date-radio-list">'+radioRows+customInputs+'</div>'+
+          tabContent+
           '<div class="date-modal-footer">'+
             '<button class="date-modal-cancel" onclick="S.showDateModal=false;render()">Cancelar</button>'+
             '<button class="date-modal-apply" onclick="applyDateFilter()">Aplicar</button>'+
