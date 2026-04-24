@@ -105,7 +105,6 @@ function toast(msg) {
 // ── CONSTANTS ────────────────────────────────────────────
 var PAID = ["meta ads","facebook ads","google ads","tiktok ads","tik tok ads","agencia meta","agencia google","agencia facebook","agencia tiktok","publicidad en google","publicidad en facebook","publicidad en tiktok","servicio de google ads","consultoría google ads","consultoria google ads","agencia de publicidad","campañas google","campañas meta","campañas facebook","campañas tiktok","agencia ads"];
 var SVCS = ["/agencia-facebook-ads","/agencia-google-ads","/agencia-tik-tok-ads","/agencia-meta-ads","/asesoria-marketing-digital","/campanas-publicitarias-digitales","/agencia-seo","/facebook/meta","/facebook/facebook-ads"];
-var CSV_NAMES = ['gráfico','grafico','consultas','páginas','paginas','dispositivos','países','paises','filtros'];
 var RANGE_WEEKS  = { '7d':1, '28d':4, '3m':13, '6m':26, '12m':52, '16m':70 };
 var RANGE_LABELS = { '7d':'Últimos 7 días', '28d':'Últimos 28 días', '3m':'Últimos 3 meses', '6m':'Últimos 6 meses', '12m':'Últimos 12 meses', '16m':'Últimos 16 meses', 'custom':'Personalizado' };
 
@@ -122,9 +121,6 @@ function isBlogArticle(url){
 }
 function shortURL(u){return(u||'').replace('https://limaretail.com','').split('#')[0]||'/';}
 function fmtK(v){return v>=1000?(v/1000).toFixed(1)+'k':Math.round(v)+'';}
-function posClass(p){return p<=10?'pg1':p<=20?'pg2':'pg3';}
-function posLbl(p){return p<=10?'Pág. 1':p<=20?'Pág. 2':'Pág. '+Math.ceil(p/10);}
-function posColor(p){return p<=10?'up':p<=20?'am':'dn';}
 function calcM(snap){
   if(!snap||!snap.data)return null;
   var g=snap.data.grafico||[];
@@ -168,6 +164,9 @@ function aggregateByWeek(rows) {
     return { label: wk, clics: b.clics, impr: b.impr, pos: b.cnt ? b.posSum / b.cnt : 0 };
   });
 }
+function posClass(p){return p<=10?'green':p<=20?'amber':'red';}
+function posLbl(p){return p<=10?'Pág. 1':p<=20?'Pág. 2':'Pág. '+Math.ceil(p/10);}
+function posColor(p){return p<=10?'up':p<=20?'am':'dn';}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function deltaHTML(pos,pp){
   if(pp===null)return'<span class="gray">—</span>';
@@ -721,11 +720,6 @@ function suggestSupportArticles(url) {
   }
   return '① Caso de éxito de cliente · ② Guía práctica del servicio · ③ Comparativa con otras opciones del mercado';
 }
-
-// ── HELPERS (DS pill classes) ────────────────────────────
-function posClass(p){return p<=10?'green':p<=20?'amber':'red';}
-function posLbl(p){return p<=10?'Pág. 1':p<=20?'Pág. 2':'Pág. '+Math.ceil(p/10);}
-function posColor(p){return p<=10?'up':p<=20?'am':'dn';}
 
 // ── SIDEBAR SVG ICONS ────────────────────────────────────
 var ICONS = {

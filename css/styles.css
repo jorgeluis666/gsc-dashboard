@@ -40,7 +40,6 @@ button,input,select,textarea{font-family:inherit}
 .s-brand{height:57px;padding:0 20px;border-bottom:1px solid var(--border);margin-bottom:6px;flex-shrink:0;background:#fff;display:flex;align-items:center;box-shadow:0 1px 3px rgba(15,23,42,.06)}
 .s-title{font-size:16px;font-weight:600;color:#0F172A;letter-spacing:-.03em;white-space:nowrap;line-height:1;font-family:"Inter",sans-serif}
 .s-title b{color:var(--brand);font-weight:700}
-.s-sub{display:none}
 .s-group-lbl{font-size:10.5px;text-transform:uppercase;color:var(--sidebar-muted);letter-spacing:.07em;padding:12px 20px 4px;font-weight:600}
 .s-item{display:flex;align-items:center;gap:10px;padding:9px 14px;margin:1px 8px;border-radius:var(--r-sm);color:var(--sidebar-text);font-size:13.5px;font-weight:500;cursor:pointer;transition:background .15s;user-select:none;border:none;background:transparent;width:calc(100% - 16px);text-align:left;letter-spacing:-.01em}
 .s-item:hover{background:rgba(255,255,255,.06);color:#fff}
@@ -87,15 +86,11 @@ button,input,select,textarea{font-family:inherit}
 input,select,textarea{padding:7px 11px;border:1px solid #CBD5E1;border-radius:var(--r-sm);font-size:13px;background:#F8FAFC;color:var(--text);outline:none;transition:background .15s,border-color .15s}
 input:focus,select:focus,textarea:focus{background:#fff;border-color:var(--brand)}
 textarea{resize:vertical}
-.inp-sm{padding:5px 9px;font-size:12px}
 
 /* ═══════════════════════════════════════════
    PANELS / CARDS
 ═══════════════════════════════════════════ */
 .panel{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:18px 20px;box-shadow:var(--sh)}
-.panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px;flex-wrap:wrap}
-.panel-title{font-size:13px;font-weight:600;color:var(--text);letter-spacing:-.01em}
-.panel-sub{font-size:11px;color:var(--muted);margin-top:2px}
 
 /* Table panel (no padding) */
 .panel-table{background:var(--card);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--sh);overflow:hidden}
@@ -167,13 +162,9 @@ td.red{color:var(--red);font-weight:600}
 .dn{color:var(--red);font-weight:600}
 .am{color:var(--amber);font-weight:600}
 .gray{color:var(--muted)}
-.delta-up{color:var(--green)}
-.delta-dn{color:var(--red)}
 
 .dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;vertical-align:middle;flex-shrink:0}
 .dot-blue{background:var(--brand)}
-.dot-red{background:var(--red)}
-.dot-green{background:var(--green)}
 .dot-amber{background:var(--amber)}
 
 /* ═══════════════════════════════════════════
@@ -195,22 +186,6 @@ td.red{color:var(--red);font-weight:600}
 .priority-action{font-size:11px;color:var(--brand);margin-top:4px;font-style:italic}
 
 /* ═══════════════════════════════════════════
-   TRACKING / SEGUIMIENTO
-═══════════════════════════════════════════ */
-.track-url-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:16px 20px;box-shadow:var(--sh)}
-.track-url-header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:12px}
-.track-url-slug{font-size:13px;font-weight:600;color:var(--brand);word-break:break-all}
-.track-url-meta{font-size:11px;color:var(--muted);margin-top:2px}
-.track-progress{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px;margin-top:8px}
-.track-week{background:#F8FAFC;border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 10px;text-align:center}
-.track-week.has-data{background:var(--brand-soft);border-color:#F4A09B}
-.track-week.p1{background:var(--green-soft);border-color:#A7F3D0}
-.track-week-lbl{font-size:10px;color:var(--muted);font-weight:600;margin-bottom:4px}
-.track-week-val{font-size:13px;font-weight:600;color:var(--text)}
-.track-week-sub{font-size:10px;color:var(--muted);margin-top:2px}
-.track-note{font-size:11px;color:#78350F;background:var(--amber-soft);border-radius:var(--r-xs);padding:6px 10px;margin-top:6px;border-left:3px solid var(--amber);line-height:1.5}
-
-/* ═══════════════════════════════════════════
    SETUP / CONFIG
 ═══════════════════════════════════════════ */
 .setup-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r-lg);padding:24px;max-width:600px;box-shadow:var(--sh)}
@@ -223,13 +198,6 @@ td.red{color:var(--red);font-weight:600}
 .step-body code{background:#F1F5F9;padding:1px 6px;border-radius:4px;font-size:11px;font-family:"SF Mono","Cascadia Code",Consolas,monospace}
 
 /* ═══════════════════════════════════════════
-   DRIVE STATUS BAR
-═══════════════════════════════════════════ */
-.drive-status{display:flex;align-items:center;gap:8px;font-size:12px;padding:8px 14px;border-radius:var(--r-sm);font-weight:500}
-.drive-status.connected{background:var(--green-soft);color:var(--green-text);border:1px solid #A7F3D0}
-.drive-status.loading{background:var(--brand-soft);color:var(--brand-text);border:1px solid #F4A09B}
-
-/* ═══════════════════════════════════════════
    SNAPSHOT ITEMS
 ═══════════════════════════════════════════ */
 .snap-item{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;box-shadow:var(--sh)}
@@ -237,14 +205,6 @@ td.red{color:var(--red);font-weight:600}
 .snap-name{font-size:13px;font-weight:600;color:var(--text)}
 .snap-name.active{color:var(--brand)}
 .snap-meta{font-size:11px;color:var(--muted);margin-top:2px}
-
-/* ═══════════════════════════════════════════
-   DROP ZONE
-═══════════════════════════════════════════ */
-.drop{border:2px dashed var(--border);border-radius:var(--r-lg);padding:3rem 2rem;text-align:center;cursor:pointer;background:var(--card);transition:border-color .2s,background .2s}
-.drop:hover,.drop.drag{border-color:var(--brand);background:var(--brand-soft)}
-.drop h2{font-size:14px;font-weight:600;color:var(--text);margin-bottom:6px}
-.drop p{font-size:12px;color:var(--muted)}
 
 /* ═══════════════════════════════════════════
    CHARTS
