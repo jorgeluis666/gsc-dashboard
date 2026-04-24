@@ -1191,9 +1191,13 @@ function buildHTML(){
         ? dCellHTML(r.dClics) + dCellHTML(r.dImpr, fmtK) + dCellHTML(r.dPos, function(v){return v.toFixed(1);}, true)
         : '';
       var actionHtml = '';
-      if(actionType==='optimizar'){
+      var rowAction = actionType;
+      if (actionType === 'auto') {
+        rowAction = (r.dClics !== null && r.dClics < 0) ? 'optimizar' : 'promocionar';
+      }
+      if(rowAction==='optimizar'){
         actionHtml='<td><button onclick="optimizarPagina(\''+safeUrl+'\')" style="font-size:10px;padding:3px 8px;background:#DC2626;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Optimizar</button></td>';
-      } else if(actionType==='promocionar'){
+      } else if(rowAction==='promocionar'){
         actionHtml='<td><button onclick="promoverPagina(\''+safeUrl+'\')" style="font-size:10px;padding:3px 8px;background:#059669;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Promocionar</button></td>';
       }
       return '<tr'+(focused?' style="background:#eff6ff"':'')+'>'+
@@ -1417,7 +1421,7 @@ function buildHTML(){
     if(ovSec==='top'){
       var pTop = paretoSplit(topClics, function(r){ return r.clics; });
       if(pTop.count > 0 && pages.length > 0) content += paretoBadge(pTop.count, pages.length);
-      content += pageTable(topClics, !!prev, null, pTop.count);
+      content += pageTable(topClics, !!prev, 'auto', pTop.count);
     } else if(ovSec==='gained'){
       if(!prev){
         content += '<div class="insight info" style="margin-top:8px">Activa la comparación de período (botón de calendario arriba) para ver qué páginas están creciendo.</div>';
