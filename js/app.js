@@ -24,7 +24,8 @@ var S = {
   pendingLabel: '',
   // ui
   refreshing: false,
-  overviewSection: 'top'  // top | gained | lost
+  overviewSection: 'top',  // top | gained | lost
+  overviewFocusUrl: null   // URL whose trend is shown in the chart, or null = site total
 };
 
 // ── PERSIST ──────────────────────────────────────────────
@@ -878,6 +879,8 @@ function buildHTML(){
         '</svg>';
     }
 
+    var lupaIcon = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
+
     function pageRow(r, showDelta, deltaKey, actionType){
       var url = r.url || r['Páginas principales'] || '';
       var clics = r.clics !== undefined ? r.clics : pN(r.Clics);
@@ -890,13 +893,23 @@ function buildHTML(){
           : '<span class="dn">↓ '+Math.round(Math.abs(dVal)).toLocaleString()+'</span>';
       }
       var safeUrl = url.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      var focused = S.overviewFocusUrl === url;
+      var lupaBg  = focused ? '#2563EB' : 'transparent';
+      var lupaCol = focused ? '#fff' : '#94a3b8';
+      var lupaBdr = focused ? '#2563EB' : '#e2e8f0';
+      var lupaTarget = focused ? 'null' : ("'"+safeUrl+"'");
+      var lupaBtn = '<button onclick="S.overviewFocusUrl='+lupaTarget+';render()" title="Ver en gráfico" '+
+        'style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;'+
+        'border:1px solid '+lupaBdr+';border-radius:4px;background:'+lupaBg+';color:'+lupaCol+';cursor:pointer;padding:0;vertical-align:middle">'+
+        lupaIcon+'</button>';
       var actionHtml = '';
       if(actionType==='optimizar'){
         actionHtml='<td><button onclick="optimizarPagina(\''+safeUrl+'\')" style="font-size:10px;padding:3px 8px;background:#DC2626;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Optimizar</button></td>';
       } else if(actionType==='promocionar'){
         actionHtml='<td><button onclick="promoverPagina(\''+safeUrl+'\')" style="font-size:10px;padding:3px 8px;background:#059669;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Promocionar</button></td>';
       }
-      return '<tr>'+
+      return '<tr'+( focused?' style="background:#eff6ff"':'')+'>'+
+        '<td style="width:28px;text-align:center;padding:4px">'+lupaBtn+'</td>'+
         '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(shortURL(url))+'</td>'+
         '<td class="r">'+Math.round(clics).toLocaleString()+'</td>'+
         '<td class="r">'+fmtK(impr)+'</td>'+
@@ -914,7 +927,7 @@ function buildHTML(){
       var extraTh = showDelta ? '<th class="r">Δ clics</th>' : '';
       var actionTh = actionType ? '<th></th>' : '';
       return '<div class="panel-table" style="margin-top:8px"><table>'+
-        '<thead><tr><th>Página</th><th class="r">Clics</th><th class="r">Impr.</th>'+extraTh+sparkHeader+actionTh+'</tr></thead>'+
+        '<thead><tr><th style="width:28px"></th><th>Página</th><th class="r">Clics</th><th class="r">Impr.</th>'+extraTh+sparkHeader+actionTh+'</tr></thead>'+
         '<tbody>'+rows.map(function(r){return pageRow(r,showDelta,deltaKey,actionType);}).join('')+'</tbody></table></div>';
     }
 
@@ -934,15 +947,33 @@ function buildHTML(){
     content += '</div>';
 
     if(S.snapshots.length >= 2) {
-      var td = buildTrendData();
-      var tLabels = td.map(function(d){ return d.label; });
+      var chartLabels, chartSeries, chartFooter;
+      if(S.overviewFocusUrl) {
+        var ut = buildURLTrend(S.overviewFocusUrl);
+        chartLabels = ut.map(function(d){ return d.label; });
+        chartSeries = [
+          { label:'Clics',    values: ut.map(function(d){ return d.clics; }), color:'#2563EB' },
+          { label:'Impr.',    values: ut.map(function(d){ return d.impr;  }), color:'#059669', dashed:true },
+          { label:'Posición', values: ut.map(function(d){ return d.pos;   }), color:'#DC2626', yRight:true }
+        ];
+        chartFooter = '<div style="display:flex;align-items:center;gap:10px;padding:4px 0 6px">'+
+          '<span style="font-size:10px;color:#2563EB;font-weight:600">'+esc(shortURL(S.overviewFocusUrl))+'</span>'+
+          '<button onclick="S.overviewFocusUrl=null;render()" style="font-size:10px;padding:2px 8px;border:1px solid #ddd;border-radius:12px;background:transparent;cursor:pointer;color:#666">× Total sitio</button>'+
+          '<span style="font-size:10px;color:#aaa">Posición: eje derecho — valores más bajos = mejor ranking</span>'+
+          '</div>';
+      } else {
+        var td = buildTrendData();
+        chartLabels = td.map(function(d){ return d.label; });
+        chartSeries = [
+          { label:'Clics',       values: td.map(function(d){ return d.clics; }), color:'#2563EB' },
+          { label:'Impresiones', values: td.map(function(d){ return d.impr;  }), color:'#059669', dashed:true },
+          { label:'Posición',    values: td.map(function(d){ return d.pos;   }), color:'#DC2626', yRight:true }
+        ];
+        chartFooter = '<p style="font-size:10px;color:#aaa;padding:4px 0 6px">Posición: eje derecho — valores más bajos = mejor ranking</p>';
+      }
       content += '<div class="panel" style="padding:1rem 1.2rem 0.6rem">';
-      content += svgLineChart(tLabels, [
-        { label:'Clics',       values: td.map(function(d){ return d.clics; }), color:'#2563EB' },
-        { label:'Impresiones', values: td.map(function(d){ return d.impr;  }), color:'#059669', dashed:true },
-        { label:'Posición',    values: td.map(function(d){ return d.pos;   }), color:'#DC2626', yRight:true }
-      ], { height:200, invertRight:true });
-      content += '<p style="font-size:10px;color:#aaa;padding:4px 0 6px">Posición: eje derecho — valores más bajos = mejor ranking</p>';
+      content += svgLineChart(chartLabels, chartSeries, { height:200, invertRight:true });
+      content += chartFooter;
       content += '</div>';
     }
 
