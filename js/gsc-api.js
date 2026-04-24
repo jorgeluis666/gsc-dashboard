@@ -239,7 +239,8 @@ function connectGSC() {
       client_id: S.clientId,
       scope: [
         'https://www.googleapis.com/auth/webmasters.readonly',
-        'https://www.googleapis.com/auth/drive.readonly'
+        'https://www.googleapis.com/auth/drive.readonly',
+        'https://www.googleapis.com/auth/indexing'
       ].join(' '),
       callback: function(resp) {
         if (resp.error) {
@@ -292,6 +293,42 @@ function resetAndImport() {
   S.curIdx = null;
   saveState();
   importFromGSC();
+}
+
+// ── GOOGLE INDEXING API ──────────────────────────────────
+function requestIndexing(url, callback) {
+  if (!S.accessToken) { callback(new Error('Sin token de acceso'), null); return; }
+  fetch('https://indexing.googleapis.com/v3/urlNotifications:publish', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + S.accessToken,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ url: url, type: 'URL_UPDATED' })
+  })
+    .then(function(r) { return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
+    .then(function(res) {
+      if (!res.ok) callback(new Error((res.data.error && res.data.error.message) || 'Error ' + res.data), null);
+      else callback(null, res.data);
+    })
+    .catch(function(e) { callback(e, null); });
+}
+
+function indexURL(urlIdx) {
+  var tracked = S.trackedURLs[urlIdx];
+  if (!tracked) return;
+  if (!S.accessToken) { connectGSC(); return; }
+  toast('Enviando URL a Google para indexación...');
+  requestIndexing(tracked.url, function(err, data) {
+    if (err) {
+      toast('Error al indexar: ' + err.message);
+      return;
+    }
+    tracked.lastIndexed = new Date().toISOString().slice(0, 10);
+    saveState();
+    render();
+    toast('✓ URL enviada a Google — suele indexarse en minutos');
+  });
 }
 
 // ── SWITCH PROPERTY — clear snapshots and re-import ──────

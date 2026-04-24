@@ -23,7 +23,8 @@ var S = {
   pending: null,
   pendingLabel: '',
   // ui
-  refreshing: false
+  refreshing: false,
+  overviewSection: 'top'  // top | gained | lost
 };
 
 // ── PERSIST ──────────────────────────────────────────────
@@ -105,6 +106,22 @@ function addTrackedURL(url, label) {
   S.trackedURLs.push({ url:url, label:label||url, dateAdded:new Date().toISOString(), notes:[] });
   saveState(); render();
   toast('✓ URL agregada al seguimiento');
+}
+
+function optimizarPagina(url) {
+  var exists = S.trackedURLs.some(function(t){ return t.url === url; });
+  if (!exists) {
+    var slug = url.replace('https://limaretail.com','') || url;
+    S.trackedURLs.push({ url:url, label:slug, dateAdded:new Date().toISOString().slice(0,10), notes:[] });
+    saveState();
+  }
+  S.tab = 'seguimiento';
+  render();
+  toast(exists ? 'URL ya en Seguimiento — revisa y optimiza' : '✓ URL agregada a Seguimiento para optimización');
+}
+
+function promoverPagina(url) {
+  toast('✓ Artículo en crecimiento — compártelo en redes o inclúyelo en el newsletter');
 }
 
 function removeTrackedURL(idx) {
@@ -840,7 +857,7 @@ function buildHTML(){
     var topDropClics = withDelta.filter(function(r){return r.dClics<0;}).sort(function(a,b){return a.dClics-b.dClics;}).slice(0,8);
     var topDropImpr  = withDelta.filter(function(r){return r.dImpr<0;}).sort(function(a,b){return a.dImpr-b.dImpr;}).slice(0,8);
 
-    function pageRow(r, showDelta, deltaKey){
+    function pageRow(r, showDelta, deltaKey, actionType){
       var url = r.url || r['Páginas principales'] || '';
       var clics = r.clics !== undefined ? r.clics : pN(r.Clics);
       var impr  = r.impr  !== undefined ? r.impr  : pN(r.Impresiones);
@@ -851,27 +868,47 @@ function buildHTML(){
           ? '<span class="up">↑ '+Math.round(dVal).toLocaleString()+'</span>'
           : '<span class="dn">↓ '+Math.round(Math.abs(dVal)).toLocaleString()+'</span>';
       }
-      return '<tr><td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(shortURL(url))+'</td>'+
+      var safeUrl = url.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      var actionHtml = '';
+      if(actionType==='optimizar'){
+        actionHtml='<td><button onclick="optimizarPagina(\''+safeUrl+'\')" style="font-size:10px;padding:3px 8px;background:#DC2626;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Optimizar</button></td>';
+      } else if(actionType==='promocionar'){
+        actionHtml='<td><button onclick="promoverPagina(\''+safeUrl+'\')" style="font-size:10px;padding:3px 8px;background:#059669;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Promocionar</button></td>';
+      }
+      return '<tr><td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(shortURL(url))+'</td>'+
              '<td class="r">'+Math.round(clics).toLocaleString()+'</td>'+
              '<td class="r">'+fmtK(impr)+'</td>'+
              (showDelta ? '<td class="r">'+dHtml+'</td>' : '')+
-             '</tr>';
+             actionHtml+'</tr>';
     }
 
-    function pageTable(title, rows, showDelta, deltaKey, note){
-      if(!rows.length) return '';
-      var extraTh = showDelta ? '<th class="r">Variación</th>' : '';
-      return '<p class="sec-lbl">'+title+(note?' <span style="font-size:10px;font-weight:400;color:#aaa">'+note+'</span>':'')+'</p>'+
-        '<div class="panel-table"><table>'+
-        '<thead><tr><th>Página</th><th class="r">Clics</th><th class="r">Impr.</th>'+extraTh+'</tr></thead>'+
-        '<tbody>'+rows.map(function(r){return pageRow(r,showDelta,deltaKey);}).join('')+'</tbody></table></div>';
+    function pageTable(rows, showDelta, deltaKey, actionType){
+      if(!rows.length) return '<div class="insight info" style="margin-top:8px">No hay datos para este período.</div>';
+      var extraTh = showDelta ? '<th class="r">Δ clics</th>' : '';
+      var actionTh = actionType ? '<th></th>' : '';
+      return '<div class="panel-table" style="margin-top:8px"><table>'+
+        '<thead><tr><th>Página</th><th class="r">Clics</th><th class="r">Impr.</th>'+extraTh+actionTh+'</tr></thead>'+
+        '<tbody>'+rows.map(function(r){return pageRow(r,showDelta,deltaKey,actionType);}).join('')+'</tbody></table></div>';
     }
 
-    // ── Trend chart across all snapshots ──
+    // ── Tab buttons + trend chart ──
+    var ovSec = S.overviewSection || 'top';
+    function tabBtn(key, label) {
+      var active = ovSec === key;
+      var bg = active ? '#2563EB' : 'transparent';
+      var col = active ? '#fff' : '#666';
+      var bdr = active ? '#2563EB' : '#ddd';
+      return '<button onclick="S.overviewSection=\''+key+'\';render()" style="font-size:11px;padding:4px 12px;border-radius:20px;border:1px solid '+bdr+';background:'+bg+';color:'+col+';cursor:pointer">'+label+'</button>';
+    }
+
+    content += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">';
+    content += '<p class="sec-lbl" style="margin:0">Evolución por período</p>';
+    content += '<div style="display:flex;gap:6px">'+tabBtn('top','Top páginas')+tabBtn('gained','↑ Crecimiento')+tabBtn('lost','↓ Caídas')+'</div>';
+    content += '</div>';
+
     if(S.snapshots.length >= 2) {
       var td = buildTrendData();
       var tLabels = td.map(function(d){ return d.label; });
-      content += '<p class="sec-lbl">Evolución por período</p>';
       content += '<div class="panel" style="padding:1rem 1.2rem 0.6rem">';
       content += svgLineChart(tLabels, [
         { label:'Clics',       values: td.map(function(d){ return d.clics; }), color:'#2563EB' },
@@ -882,15 +919,21 @@ function buildHTML(){
       content += '</div>';
     }
 
-    content += pageTable('1 · Páginas con más clics', topClics, false, '');
-
-    if(prev){
-      content += pageTable('2 · Páginas que más aumentaron clics',       topGainClics, true, 'dClics', 'vs '+esc(prev.label));
-      content += pageTable('3 · Páginas que más aumentaron impresiones', topGainImpr,  true, 'dImpr',  'vs '+esc(prev.label));
-      content += pageTable('4 · Páginas que más disminuyeron clics',     topDropClics, true, 'dClics', 'vs '+esc(prev.label));
-      content += pageTable('5 · Páginas que más disminuyeron impresiones', topDropImpr, true, 'dImpr', 'vs '+esc(prev.label));
-    } else {
-      content += '<div class="insight info" style="margin-top:10px">Las categorías 2–5 requieren un segundo snapshot para calcular variación. Carga el siguiente período para ver los cambios.</div>';
+    // ── Table per selected tab ──
+    if(ovSec==='top'){
+      content += pageTable(topClics, false, '', null);
+    } else if(ovSec==='gained'){
+      if(!prev){
+        content += '<div class="insight info" style="margin-top:8px">Necesitas al menos 2 períodos para ver variaciones.</div>';
+      } else {
+        content += pageTable(topGainClics, true, 'dClics', 'promocionar');
+      }
+    } else if(ovSec==='lost'){
+      if(!prev){
+        content += '<div class="insight info" style="margin-top:8px">Necesitas al menos 2 períodos para ver variaciones.</div>';
+      } else {
+        content += pageTable(topDropClics, true, 'dClics', 'optimizar');
+      }
     }
   }
 
@@ -1028,9 +1071,13 @@ function buildHTML(){
           '<div class="track-url-slug">'+esc(slug)+'</div>'+
           '<div class="track-url-meta">Enviado a GSC: '+esc(added)+
             (weeksTracked ? ' · <span style="color:var(--green)">'+weeksTracked+' período'+(weeksTracked>1?'s':'')+' con datos</span>' : ' · <span style="color:var(--red)">Sin datos aún en snapshots</span>')+
+            (tracked.lastIndexed ? ' · <span style="color:#7c3aed">↑ Indexado: '+esc(tracked.lastIndexed)+'</span>' : '')+
           '</div>'+
           '</div>'+
+          '<div style="display:flex;gap:6px">'+
+          '<button style="font-size:11px;padding:4px 10px;background:#7c3aed;color:#fff;border:none;border-radius:4px;cursor:pointer" onclick="indexURL('+urlIdx+')">↑ Indexar</button>'+
           '<button class="danger" style="font-size:11px" onclick="removeTrackedURL('+urlIdx+')">Quitar</button>'+
+          '</div>'+
           '</div>';
 
         if(history.length){
