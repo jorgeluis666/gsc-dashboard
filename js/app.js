@@ -1224,7 +1224,7 @@ function buildHTML(){
     }
 
     // Horizontal bar chart — per-URL Δ clicks (used for Crecimiento / Caídas)
-    function deltaBarChart(rows, color, label){
+    function deltaBarChart(rows, color, label, actionType){
       if (!rows.length) return '<p style="font-size:11px;color:#94A3B8;padding:20px 0;text-align:center">Sin páginas que '+label+' en este período.</p>';
       var maxAbs = Math.max.apply(null, rows.map(function(r){ return Math.abs(r.dClics); }));
       if (!maxAbs) maxAbs = 1;
@@ -1232,12 +1232,20 @@ function buildHTML(){
         var v = Math.abs(r.dClics);
         var w = (v / maxAbs * 100);
         var sign = r.dClics >= 0 ? '+' : '−';
+        var safeUrl = esc(r.url).replace(/'/g, '&#39;');
+        var actionBtn = '';
+        if (actionType === 'promocionar') {
+          actionBtn = '<button onclick="promoverPagina(\''+safeUrl+'\')" style="flex:0 0 auto;font-size:10px;font-weight:700;padding:4px 10px;border:none;border-radius:6px;background:#059669;color:#fff;cursor:pointer;letter-spacing:.2px">Promocionar</button>';
+        } else if (actionType === 'optimizar') {
+          actionBtn = '<button onclick="optimizarPagina(\''+safeUrl+'\')" style="flex:0 0 auto;font-size:10px;font-weight:700;padding:4px 10px;border:none;border-radius:6px;background:#DC2626;color:#fff;cursor:pointer;letter-spacing:.2px">Optimizar</button>';
+        }
         return '<div style="display:flex;align-items:center;gap:10px;margin:5px 0">'+
-          '<div style="flex:0 0 260px;font-size:11px;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(r.url)+'">'+esc(shortURL(r.url))+'</div>'+
+          '<div style="flex:0 0 240px;font-size:11px;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(r.url)+'">'+esc(shortURL(r.url))+'</div>'+
           '<div style="flex:1;background:#F1F5F9;border-radius:3px;height:18px;position:relative;min-width:60px">'+
             '<div style="background:'+color+';height:100%;border-radius:3px;width:'+w.toFixed(1)+'%;transition:width .25s"></div>'+
           '</div>'+
-          '<div style="flex:0 0 80px;font-size:11px;font-weight:700;color:'+color+';text-align:right">'+sign+Math.round(v).toLocaleString()+' clics</div>'+
+          '<div style="flex:0 0 72px;font-size:11px;font-weight:700;color:'+color+';text-align:right">'+sign+Math.round(v).toLocaleString()+' clics</div>'+
+          actionBtn+
         '</div>';
       }).join('') + '</div>';
     }
@@ -1350,9 +1358,10 @@ function buildHTML(){
         var color = ovSec === 'gained' ? '#059669' : '#DC2626';
         var title = ovSec === 'gained' ? 'Top páginas con más clics ganados' : 'Top páginas con más clics perdidos';
         var verb  = ovSec === 'gained' ? 'crecieron' : 'cayeron';
+        var barAction = ovSec === 'gained' ? 'promocionar' : 'optimizar';
         content += '<div class="panel" style="padding:1rem 1.2rem 0.8rem">'+
           '<p style="font-size:11px;font-weight:700;color:'+color+';margin:0 0 10px;letter-spacing:.2px">'+title+'</p>'+
-          deltaBarChart(rows, color, verb)+
+          deltaBarChart(rows, color, verb, barAction)+
           '<p style="font-size:10px;color:#94A3B8;padding:6px 0 2px;margin:0">vs '+esc(prevLabel)+'</p>'+
           '</div>';
       }

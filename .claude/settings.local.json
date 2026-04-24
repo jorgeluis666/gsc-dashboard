@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh auth *)",
+      "Bash(gh repo *)",
+      "Bash(git config *)",
+      "Bash('/c/Program Files/GitHub CLI/gh.exe' auth status)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" auth status)",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "WebFetch(domain:limaretail.com)",
+      "Bash(grep -n \"^[[:space:]]*//.*\" /d/dashboard-GSC-SEO/js/app.js)",
+      "Bash(grep -v \"^[0-9]*:[[:space:]]*//\")",
+      "Bash(grep -E \"^[[:space:]]*//|^[[:space:]]*/\\\\*|^\\\\*/\" /d/dashboard-GSC-SEO/js/app.js)"
+    ]
+  }
+}
