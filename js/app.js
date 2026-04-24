@@ -857,6 +857,27 @@ function buildHTML(){
     var topDropClics = withDelta.filter(function(r){return r.dClics<0;}).sort(function(a,b){return a.dClics-b.dClics;}).slice(0,8);
     var topDropImpr  = withDelta.filter(function(r){return r.dImpr<0;}).sort(function(a,b){return a.dImpr-b.dImpr;}).slice(0,8);
 
+    // ── Sparkline: clicks for a URL across all snapshots ──
+    function sparkFor(url) {
+      var n = S.snapshots.length;
+      if(n < 2) return '';
+      var vals = S.snapshots.map(function(s) {
+        var row = (s.data.paginas||[]).find(function(r){ return (r['Páginas principales']||'')===url; });
+        return row ? pN(row.Clics) : 0;
+      });
+      var w=80, h=20, pad=2;
+      var max=Math.max.apply(null,vals)||1;
+      var pts=vals.map(function(v,i){
+        return (pad+(w-2*pad)*i/(n-1)).toFixed(1)+','+(h-pad-(v/max)*(h-2*pad)).toFixed(1);
+      }).join(' ');
+      var nonZero=vals.filter(function(v){return v>0;});
+      var rising=nonZero.length>=2&&nonZero[nonZero.length-1]>=nonZero[nonZero.length-2];
+      var col=nonZero.length<2?'#aaa':rising?'#059669':'#DC2626';
+      return '<svg width="'+w+'" height="'+h+'" style="vertical-align:middle">'+
+        '<polyline points="'+pts+'" fill="none" stroke="'+col+'" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>'+
+        '</svg>';
+    }
+
     function pageRow(r, showDelta, deltaKey, actionType){
       var url = r.url || r['Páginas principales'] || '';
       var clics = r.clics !== undefined ? r.clics : pN(r.Clics);
@@ -875,19 +896,25 @@ function buildHTML(){
       } else if(actionType==='promocionar'){
         actionHtml='<td><button onclick="promoverPagina(\''+safeUrl+'\')" style="font-size:10px;padding:3px 8px;background:#059669;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Promocionar</button></td>';
       }
-      return '<tr><td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(shortURL(url))+'</td>'+
-             '<td class="r">'+Math.round(clics).toLocaleString()+'</td>'+
-             '<td class="r">'+fmtK(impr)+'</td>'+
-             (showDelta ? '<td class="r">'+dHtml+'</td>' : '')+
-             actionHtml+'</tr>';
+      return '<tr>'+
+        '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(shortURL(url))+'</td>'+
+        '<td class="r">'+Math.round(clics).toLocaleString()+'</td>'+
+        '<td class="r">'+fmtK(impr)+'</td>'+
+        (showDelta ? '<td class="r">'+dHtml+'</td>' : '')+
+        '<td style="padding:4px 8px;text-align:center">'+sparkFor(url)+'</td>'+
+        actionHtml+'</tr>';
     }
+
+    var snapFirst = S.snapshots.length ? S.snapshots[0].label : '';
+    var snapLast  = S.snapshots.length ? S.snapshots[S.snapshots.length-1].label : '';
+    var sparkHeader = '<th style="text-align:center;font-size:10px;color:#aaa;font-weight:500">'+snapFirst+' → '+snapLast+'</th>';
 
     function pageTable(rows, showDelta, deltaKey, actionType){
       if(!rows.length) return '<div class="insight info" style="margin-top:8px">No hay datos para este período.</div>';
       var extraTh = showDelta ? '<th class="r">Δ clics</th>' : '';
       var actionTh = actionType ? '<th></th>' : '';
       return '<div class="panel-table" style="margin-top:8px"><table>'+
-        '<thead><tr><th>Página</th><th class="r">Clics</th><th class="r">Impr.</th>'+extraTh+actionTh+'</tr></thead>'+
+        '<thead><tr><th>Página</th><th class="r">Clics</th><th class="r">Impr.</th>'+extraTh+sparkHeader+actionTh+'</tr></thead>'+
         '<tbody>'+rows.map(function(r){return pageRow(r,showDelta,deltaKey,actionType);}).join('')+'</tbody></table></div>';
     }
 
@@ -926,12 +953,14 @@ function buildHTML(){
       if(!prev){
         content += '<div class="insight info" style="margin-top:8px">Necesitas al menos 2 períodos para ver variaciones.</div>';
       } else {
+        content += '<p style="font-size:11px;color:#555;margin:10px 0 0">Páginas que ganaron clics vs <strong>'+esc(prev.label)+'</strong> (semana anterior)</p>';
         content += pageTable(topGainClics, true, 'dClics', 'promocionar');
       }
     } else if(ovSec==='lost'){
       if(!prev){
         content += '<div class="insight info" style="margin-top:8px">Necesitas al menos 2 períodos para ver variaciones.</div>';
       } else {
+        content += '<p style="font-size:11px;color:#555;margin:10px 0 0">Páginas que perdieron clics vs <strong>'+esc(prev.label)+'</strong> (semana anterior)</p>';
         content += pageTable(topDropClics, true, 'dClics', 'optimizar');
       }
     }
