@@ -1136,25 +1136,6 @@ function buildHTML(){
     var topDropImpr  = withDelta.filter(function(r){return r.dImpr<0;}).sort(function(a,b){return a.dImpr-b.dImpr;}).slice(0,8);
 
     // ── Sparkline: clicks trend for a URL ──
-    function sparkFor(url) {
-      var weekly = td; // aggregated trend data already computed above
-      var n = weekly.length;
-      if(n < 2) return '';
-      // For direct API: use the overall weekly trend as approximation (individual URL requires extra fetch)
-      var vals = weekly.map(function(w){ return w.clics; });
-      var w=80, h=20, pad=2;
-      var max=Math.max.apply(null,vals)||1;
-      var pts=vals.map(function(v,i){
-        return (pad+(w-2*pad)*i/(n-1)).toFixed(1)+','+(h-pad-(v/max)*(h-2*pad)).toFixed(1);
-      }).join(' ');
-      var nonZero=vals.filter(function(v){return v>0;});
-      var rising=nonZero.length>=2&&nonZero[nonZero.length-1]>=nonZero[nonZero.length-2];
-      var col=nonZero.length<2?'#aaa':rising?'#059669':'#DC2626';
-      return '<svg width="'+w+'" height="'+h+'" style="vertical-align:middle">'+
-        '<polyline points="'+pts+'" fill="none" stroke="'+col+'" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>'+
-        '</svg>';
-    }
-
     var lupaIcon = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
 
     function pageRow(r, showDelta, deltaKey, actionType){
@@ -1173,9 +1154,6 @@ function buildHTML(){
       var lupaBg  = focused ? '#E85249' : 'transparent';
       var lupaCol = focused ? '#fff' : '#94a3b8';
       var lupaBdr = focused ? '#E85249' : '#e2e8f0';
-      var lupaTarget = focused
-        ? 'null;S.overviewFocusData=null'
-        : ("'"+safeUrl+"'");
       var lupaAction = focused
         ? 'S.overviewFocusUrl=null;S.overviewFocusData=null;render()'
         : (usingDirect ? 'S.overviewFocusUrl=\''+safeUrl+'\';S.overviewFocusData=null;fetchURLFocus(\''+safeUrl+'\')'
@@ -1192,23 +1170,18 @@ function buildHTML(){
       }
       return '<tr'+( focused?' style="background:#eff6ff"':'')+'>'+
         '<td style="width:28px;text-align:center;padding:4px">'+lupaBtn+'</td>'+
-        '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(shortURL(url))+'</td>'+
+        '<td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(shortURL(url))+'</td>'+
         '<td class="r">'+Math.round(clics).toLocaleString()+'</td>'+
         '<td class="r">'+fmtK(impr)+'</td>'+
         (showDelta ? '<td class="r">'+dHtml+'</td>' : '')+
-        '<td style="padding:4px 8px;text-align:center">'+sparkFor(url)+'</td>'+
         actionHtml+'</tr>';
     }
-
-    var snapFirst = S.snapshots.length ? S.snapshots[0].label : '';
-    var snapLast  = S.snapshots.length ? S.snapshots[S.snapshots.length-1].label : '';
-    var sparkHeader = '<th style="text-align:center;font-size:10px;color:#aaa;font-weight:500">'+snapFirst+' → '+snapLast+'</th>';
 
     function pageTable(rows, showDelta, deltaKey, actionType, paretoIdx){
       if(!rows.length) return '<div class="insight info" style="margin-top:8px">No hay datos para este período.</div>';
       var extraTh = showDelta ? '<th class="r">Δ clics</th>' : '';
       var actionTh = actionType ? '<th></th>' : '';
-      var colCount = 5 + (showDelta?1:0) + (actionType?1:0); // lupa+Página+Clics+Impr+spark + optionals
+      var colCount = 4 + (showDelta?1:0) + (actionType?1:0);
       var rowHtml = '';
       rows.forEach(function(r, i) {
         rowHtml += pageRow(r, showDelta, deltaKey, actionType);
@@ -1217,98 +1190,144 @@ function buildHTML(){
         }
       });
       return '<div class="panel-table" style="margin-top:8px"><table>'+
-        '<thead><tr><th style="width:28px"></th><th>Página</th><th class="r">Clics</th><th class="r">Impr.</th>'+extraTh+sparkHeader+actionTh+'</tr></thead>'+
+        '<thead><tr><th style="width:28px"></th><th>Página</th><th class="r">Clics</th><th class="r">Impr.</th>'+extraTh+actionTh+'</tr></thead>'+
         '<tbody>'+rowHtml+'</tbody></table></div>';
     }
 
-    // ── Tab buttons + trend chart ──
     var ovSec = S.overviewSection || 'top';
-    function tabBtn(key, label) {
-      var active = ovSec === key;
-      var bg = active ? '#E85249' : 'transparent';
-      var col = active ? '#fff' : '#666';
-      var bdr = active ? '#E85249' : '#ddd';
-      return '<button onclick="S.overviewSection=\''+key+'\';render()" style="font-size:11px;padding:4px 12px;border-radius:20px;border:1px solid '+bdr+';background:'+bg+';color:'+col+';cursor:pointer">'+label+'</button>';
-    }
 
-    content += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">';
-    content += '<p class="sec-lbl" style="margin:0">Evolución por período</p>';
-    content += '<div style="display:flex;align-items:center;gap:8px">'+
-      dateFilterBtn+compareBadge+
-      '<div style="width:1px;height:14px;background:#E2E8F0"></div>'+
-      '<div style="display:flex;gap:6px">'+tabBtn('top','Top páginas')+tabBtn('gained','↑ Crecimiento')+tabBtn('lost','↓ Caídas')+'</div>'+
-    '</div>';
-    content += '</div>';
-
-    // ── Chart data source: direct API (daily→weekly) or snapshots ──
+    // ── Chart data ──
     var td = usingDirect ? aggregateByWeek(S.gscData.grafico || []) : buildTrendData(filteredSnaps());
     var ctd = usingDirect
       ? (S.gscCompareData ? aggregateByWeek(S.gscCompareData.grafico || []) : [])
       : (compareSnaps().length ? buildTrendData(compareSnaps()) : []);
 
-    if(td.length >= 2) {
+    // ── Filter bar (top-right) ──
+    content += '<div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-bottom:14px">'+
+      dateFilterBtn+compareBadge+'</div>';
+
+    // ── Large section cards ──
+    function secCard(key, color, iconPath, label, statVal, desc) {
+      var active = ovSec === key;
+      var bg   = active ? color : '#fff';
+      var bdr  = active ? color : '#E2E8F0';
+      var txtC = active ? '#fff' : '#0F172A';
+      var subC = active ? 'rgba(255,255,255,.8)' : '#64748B';
+      var stC  = active ? '#fff' : color;
+      return '<div onclick="S.overviewSection=\''+key+'\';render()" style="background:'+bg+';border:2px solid '+bdr+
+        ';border-radius:14px;padding:20px 22px;cursor:pointer;box-shadow:'+(active?'0 6px 18px '+color+'40':'0 1px 3px rgba(0,0,0,.06)')+';transition:all .15s">'+
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'+
+          '<div style="width:34px;height:34px;background:'+(active?'rgba(255,255,255,.22)':color+'18')+
+            ';border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0">'+
+            '<svg viewBox="0 0 24 24" style="width:17px;height:17px;fill:none;stroke:'+(active?'#fff':color)+
+            ';stroke-width:2;stroke-linecap:round;stroke-linejoin:round">'+iconPath+'</svg>'+
+          '</div>'+
+          '<span style="font-weight:700;font-size:14px;color:'+txtC+'">'+label+'</span>'+
+        '</div>'+
+        '<div style="font-size:28px;font-weight:800;color:'+stC+';letter-spacing:-.5px;line-height:1;margin-bottom:6px">'+statVal+'</div>'+
+        '<p style="font-size:11px;color:'+subC+';margin:0;line-height:1.45">'+desc+'</p>'+
+      '</div>';
+    }
+
+    content += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px">';
+    content += secCard('top', '#E85249',
+      '<line x1="18" y1="20" x2="18" y2="4"/><line x1="12" y1="20" x2="12" y2="10"/><line x1="6" y1="20" x2="6" y2="14"/>',
+      'Top páginas', fmtK(curM.clics)+' clics',
+      pages.length+' páginas · '+(usingDirect ? activeRangeLbl : 'período actual'));
+    content += secCard('gained', '#059669',
+      '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
+      'Crecimiento', prev ? (topGainClics.length ? '+'+topGainClics.length : '—') : '—',
+      prev ? topGainClics.length+' páginas ganaron clics vs '+prevLabel : 'Activa comparación de período para ver crecimiento');
+    content += secCard('lost', '#DC2626',
+      '<polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/>',
+      'Caídas', prev ? (topDropClics.length ? '-'+topDropClics.length : '—') : '—',
+      prev ? topDropClics.length+' páginas perdieron clics vs '+prevLabel : 'Activa comparación de período para ver caídas');
+    content += '</div>';
+
+    // ── Trend chart (adapts to selected section) ──
+    (function() {
+      function padTo(arr, len) { var a=arr.slice(); while(a.length<len) a.unshift(null); return a; }
       var chartLabels, chartSeries, chartFooter;
-      if(S.overviewFocusUrl) {
-        var focusRows = usingDirect ? aggregateByWeek(S.overviewFocusData || []) : [];
+      var hasFocus = !!S.overviewFocusUrl;
+
+      if (hasFocus) {
         if (usingDirect && !S.overviewFocusData) {
           fetchURLFocus(S.overviewFocusUrl);
-          chartLabels = []; chartSeries = [];
-          chartFooter = '<p style="font-size:10px;color:#aaa;padding:4px 0 6px">Cargando tendencia de URL…</p>';
-        } else {
-          var ut = usingDirect ? focusRows : buildURLTrend(S.overviewFocusUrl, filteredSnaps());
-          chartLabels = ut.map(function(d){ return d.label; });
-          chartSeries = [
-            { label:'Clics', values: ut.map(function(d){ return d.clics; }), color:'#E85249' },
-            { label:'Impr.', values: ut.map(function(d){ return d.impr;  }), color:'#059669', dashed:true }
-          ];
-          chartFooter = '<div style="display:flex;align-items:center;gap:10px;padding:4px 0 6px">'+
-            '<span style="font-size:10px;color:#E85249;font-weight:600">'+esc(shortURL(S.overviewFocusUrl))+'</span>'+
-            '<button onclick="S.overviewFocusUrl=null;S.overviewFocusData=null;render()" style="font-size:10px;padding:2px 8px;border:1px solid #ddd;border-radius:12px;background:transparent;cursor:pointer;color:#666">× Total sitio</button>'+
-            '</div>';
+          content += '<div class="panel" style="padding:1rem 1.2rem 0.6rem"><p style="font-size:10px;color:#aaa;padding:4px 0 6px">Cargando tendencia de URL…</p></div>';
+          return;
         }
-      } else {
+        var focusRows = usingDirect ? aggregateByWeek(S.overviewFocusData || []) : [];
+        var ut = usingDirect ? focusRows : buildURLTrend(S.overviewFocusUrl, filteredSnaps());
+        if (!ut.length) return;
+        chartLabels = ut.map(function(d){ return d.label; });
+        chartSeries = [
+          { label:'Clics', values: ut.map(function(d){ return d.clics; }), color:'#E85249' },
+          { label:'Impr.', values: ut.map(function(d){ return d.impr;  }), color:'#059669', dashed:true }
+        ];
+        chartFooter = '<div style="display:flex;align-items:center;gap:10px;padding:4px 0 6px">'+
+          '<span style="font-size:10px;color:#E85249;font-weight:600">'+esc(shortURL(S.overviewFocusUrl))+'</span>'+
+          '<button onclick="S.overviewFocusUrl=null;S.overviewFocusData=null;render()" style="font-size:10px;padding:2px 8px;border:1px solid #ddd;border-radius:12px;background:transparent;cursor:pointer;color:#666">× Total sitio</button>'+
+          '</div>';
+      } else if (td.length < 2) {
+        return;
+      } else if (ovSec === 'top') {
         chartLabels = td.map(function(d){ return d.label; });
         chartSeries = [
           { label:'Clics',       values: td.map(function(d){ return d.clics; }), color:'#E85249' },
           { label:'Impresiones', values: td.map(function(d){ return d.impr;  }), color:'#059669', dashed:true },
-          { label:'Posición',    values: td.map(function(d){ return d.pos;   }), color:'#DC2626', yRight:true }
+          { label:'Posición',    values: td.map(function(d){ return d.pos;   }), color:'#94A3B8', yRight:true }
         ];
         if (ctd.length >= 1) {
-          function padTo(arr, len) { var a=arr.slice(); while(a.length<len) a.unshift(null); return a; }
           var maxLen = Math.max(chartLabels.length, ctd.length);
-          chartLabels = padTo(chartLabels, maxLen);
+          chartLabels = padTo(td.map(function(d){ return d.label; }), maxLen);
           chartSeries = [
-            { label:'Clics',         values: padTo(td.map(function(d){return d.clics;}),  maxLen), color:'#E85249' },
-            { label:'Impresiones',   values: padTo(td.map(function(d){return d.impr;}),   maxLen), color:'#059669', dashed:true },
-            { label:'Clics (ant.)',  values: padTo(ctd.map(function(d){return d.clics;}), maxLen), color:'rgba(232,82,73,0.4)' },
-            { label:'Impr. (ant.)',  values: padTo(ctd.map(function(d){return d.impr;}),  maxLen), color:'rgba(5,150,105,0.4)', dashed:true }
+            { label:'Clics',        values: padTo(td.map(function(d){return d.clics;}),  maxLen), color:'#E85249' },
+            { label:'Impresiones',  values: padTo(td.map(function(d){return d.impr;}),   maxLen), color:'#059669', dashed:true },
+            { label:'Clics (ant.)', values: padTo(ctd.map(function(d){return d.clics;}), maxLen), color:'rgba(232,82,73,0.35)' },
+            { label:'Impr. (ant.)', values: padTo(ctd.map(function(d){return d.impr;}),  maxLen), color:'rgba(5,150,105,0.35)', dashed:true }
           ];
         }
         chartFooter = '<p style="font-size:10px;color:#aaa;padding:4px 0 6px">Posición: eje derecho — valores más bajos = mejor ranking</p>';
+      } else {
+        var mc = ovSec === 'gained' ? '#059669' : '#DC2626';
+        chartLabels = td.map(function(d){ return d.label; });
+        if (ctd.length >= 1) {
+          var maxLen2 = Math.max(td.length, ctd.length);
+          chartSeries = [
+            { label:'Clics (actual)',      values: padTo(td.map(function(d){return d.clics;}),  maxLen2), color: mc },
+            { label:'Clics (comparación)', values: padTo(ctd.map(function(d){return d.clics;}), maxLen2), color:'rgba(100,116,139,.5)', dashed:true }
+          ];
+          chartFooter = '<p style="font-size:10px;color:#aaa;padding:4px 0 6px">'+(ovSec==='gained'?'↑ Verde = período actual con más clics':'↓ Rojo = período actual con menos clics')+' vs comparación</p>';
+        } else {
+          chartSeries = [
+            { label:'Clics',       values: td.map(function(d){ return d.clics; }), color: mc },
+            { label:'Impresiones', values: td.map(function(d){ return d.impr;  }), color:'rgba(100,116,139,.5)', dashed:true }
+          ];
+          chartFooter = '<p style="font-size:10px;color:#94A3B8;padding:4px 0 6px">Activa comparación de período para ver variaciones frente al período anterior</p>';
+        }
       }
+
       content += '<div class="panel" style="padding:1rem 1.2rem 0.6rem">';
-      if (chartLabels && chartLabels.length >= 2) content += svgLineChart(chartLabels, chartSeries, { height:200, invertRight:true });
+      if (chartLabels && chartLabels.length >= 2) content += svgLineChart(chartLabels, chartSeries, { height:200, invertRight: ovSec==='top' });
       content += chartFooter;
       content += '</div>';
-    }
+    })();
 
-    // ── Table per selected tab ──
+    // ── Table per selected section ──
     if(ovSec==='top'){
       var pTop = paretoSplit(topClics, function(r){ return r.clics !== undefined ? r.clics : pN(r.Clics); });
       if(pTop.count > 0 && pages.length > 0) content += paretoBadge(pTop.count, pages.length);
       content += pageTable(topClics, false, '', null, pTop.count);
     } else if(ovSec==='gained'){
       if(!prev){
-        content += '<div class="insight info" style="margin-top:8px">Necesitas al menos 2 períodos para ver variaciones.</div>';
+        content += '<div class="insight info" style="margin-top:8px">Activa la comparación de período (botón de calendario arriba) para ver qué páginas están creciendo.</div>';
       } else {
-        content += '<p style="font-size:11px;color:#555;margin:10px 0 0">Páginas que ganaron clics vs <strong>'+esc(prevLabel)+'</strong></p>';
         content += pageTable(topGainClics, true, 'dClics', 'promocionar');
       }
     } else if(ovSec==='lost'){
       if(!prev){
-        content += '<div class="insight info" style="margin-top:8px">Necesitas al menos 2 períodos para ver variaciones.</div>';
+        content += '<div class="insight info" style="margin-top:8px">Activa la comparación de período (botón de calendario arriba) para ver qué páginas están cayendo.</div>';
       } else {
-        content += '<p style="font-size:11px;color:#555;margin:10px 0 0">Páginas que perdieron clics vs <strong>'+esc(prevLabel)+'</strong></p>';
         content += pageTable(topDropClics, true, 'dClics', 'optimizar');
       }
     }
