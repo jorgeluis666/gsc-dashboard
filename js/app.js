@@ -25,7 +25,8 @@ var S = {
   // ui
   refreshing: false,
   overviewSection: 'top',  // top | gained | lost
-  overviewFocusUrl: null   // URL whose trend is shown in the chart, or null = site total
+  overviewFocusUrl: null,  // URL whose trend is shown in the chart, or null = site total
+  overviewRange: '3m'      // 7d | 28d | 3m | 6m | 12m | 16m
 };
 
 // ── PERSIST ──────────────────────────────────────────────
@@ -41,6 +42,7 @@ function loadState() {
       S.folderName  = d.folderName  || '';
       S.gscSiteUrl  = d.gscSiteUrl  || '';
       S.gscWeeks    = d.gscWeeks    || 8;
+      S.overviewRange = d.overviewRange || '3m';
       if (S.snapshots.length) S.curIdx = S.snapshots.length - 1;
     }
   } catch(e) {}
@@ -55,7 +57,8 @@ function saveState() {
       folderId:    S.folderId,
       folderName:  S.folderName,
       gscSiteUrl:  S.gscSiteUrl,
-      gscWeeks:    S.gscWeeks
+      gscWeeks:    S.gscWeeks,
+      overviewRange: S.overviewRange
     }));
   } catch(e) {}
 }
@@ -71,6 +74,7 @@ function toast(msg) {
 var PAID = ["meta ads","facebook ads","google ads","tiktok ads","tik tok ads","agencia meta","agencia google","agencia facebook","agencia tiktok","publicidad en google","publicidad en facebook","publicidad en tiktok","servicio de google ads","consultoría google ads","consultoria google ads","agencia de publicidad","campañas google","campañas meta","campañas facebook","campañas tiktok","agencia ads"];
 var SVCS = ["/agencia-facebook-ads","/agencia-google-ads","/agencia-tik-tok-ads","/agencia-meta-ads","/asesoria-marketing-digital","/campanas-publicitarias-digitales","/agencia-seo","/facebook/meta","/facebook/facebook-ads"];
 var CSV_NAMES = ['gráfico','grafico','consultas','páginas','paginas','dispositivos','países','paises','filtros'];
+var RANGE_WEEKS = { '7d':1, '28d':4, '3m':13, '6m':26, '12m':52, '16m':70 };
 
 // ── HELPERS ──────────────────────────────────────────────
 function pN(v){return parseFloat(String(v||'0').replace(/[%\s]/g,'').replace(',','.'))||0;}
@@ -144,8 +148,8 @@ function addNote(urlIdx, noteText, noteDate) {
 }
 
 // Cross all snapshots for a URL
-function getURLHistory(url) {
-  return S.snapshots.map(function(snap) {
+function getURLHistory(url, snaps) {
+  return (snaps || S.snapshots).map(function(snap) {
     var pages = snap.data.paginas || [];
     var row = pages.find(function(r){
       return (r['Páginas principales']||'').split('#')[0].replace(/\/$/,'') === url.split('#')[0].replace(/\/$/,'');
@@ -366,16 +370,16 @@ function svgLineChart(labels, series, opts) {
 }
 
 // Build trend data across all snapshots
-function buildTrendData() {
-  return S.snapshots.map(function(snap) {
+function buildTrendData(snaps) {
+  return (snaps || S.snapshots).map(function(snap) {
     var m = calcM(snap);
     return { label: snap.label, clics: m ? m.clics : 0, impr: m ? m.impr : 0, pos: m ? m.pos : 0 };
   });
 }
 
 // Build trend data for a specific URL across all snapshots
-function buildURLTrend(url) {
-  return getURLHistory(url).map(function(h) {
+function buildURLTrend(url, snaps) {
+  return getURLHistory(url, snaps).map(function(h) {
     return {
       label: h.label,
       clics: h.found ? h.clics : null,
@@ -383,6 +387,20 @@ function buildURLTrend(url) {
       pos:   h.found ? h.pos   : null
     };
   });
+}
+
+function filteredSnaps() {
+  var n = RANGE_WEEKS[S.overviewRange] || S.snapshots.length;
+  var sorted = S.snapshots.slice().sort(function(a,b){ return a.label.localeCompare(b.label); });
+  return sorted.slice(-n);
+}
+
+function setOverviewRange(r) {
+  S.overviewRange = r;
+  S.gscWeeks = RANGE_WEEKS[r] || 13;
+  saveState();
+  if (S.gscStatus === 'connected' && S.gscSiteUrl) importFromGSC();
+  else render();
 }
 
 // ── IDEAS HELPERS ─────────────────────────────────────────
@@ -729,13 +747,8 @@ function buildHTML(){
             '</select></div>'
           : '') +
 
-        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
-          '<div><label style="font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px">Rango</label>'+
-          '<select id="cfg-gscweeks" onchange="S.gscWeeks=parseInt(this.value);saveState()" style="padding:7px 10px;border:1px solid #E2E8F0;border-radius:8px;font-size:13px;background:#fff">'+weekOptions+'</select></div>'+
-          '<button class="btn success" style="margin-top:18px;padding:9px 20px;font-size:13px" onclick="importFromGSC()" '+(S.gscImporting?'disabled':'')+'>'+
-            (S.gscImporting ? '<span class="spinning">↻</span> Importando…' : '↓ Importar semanas')+'</button>'+
-          '<button class="btn btn-sm" style="margin-top:18px;background:#FEF2F2;color:#DC2626;border-color:#FECACA" onclick="resetAndImport()">⟳ Limpiar e importar todo</button>'+
-          '<button class="btn btn-sm" style="margin-top:18px;color:#94A3B8" onclick="disconnectDrive();S.gscStatus=\'disconnected\';S.gscSites=[];render()">Desconectar</button>'+
+        '<div style="margin-top:0.5rem">'+
+          '<button class="btn btn-sm" style="color:#94A3B8" onclick="disconnectDrive();S.gscStatus=\'disconnected\';S.gscSites=[];render()">Desconectar</button>'+
         '</div>'+
       '</div>';
 
@@ -949,15 +962,26 @@ function buildHTML(){
       return '<button onclick="S.overviewSection=\''+key+'\';render()" style="font-size:11px;padding:4px 12px;border-radius:20px;border:1px solid '+bdr+';background:'+bg+';color:'+col+';cursor:pointer">'+label+'</button>';
     }
 
+    var activeRange = S.overviewRange || '3m';
+    var rangeOpts = [['7d','7 días'],['28d','28 días'],['3m','3 meses'],['6m','6 meses'],['12m','12 meses'],['16m','16 meses']];
+    function rangeBtn(key, lbl) {
+      var act = activeRange === key;
+      return '<button onclick="setOverviewRange(\''+key+'\')" style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid '+(act?'#E85249':'#ddd')+';background:'+(act?'#FEF2F2':'transparent')+';color:'+(act?'#E85249':'#888')+';cursor:pointer;font-family:inherit">'+lbl+'</button>';
+    }
     content += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">';
     content += '<p class="sec-lbl" style="margin:0">Evolución por período</p>';
-    content += '<div style="display:flex;gap:6px">'+tabBtn('top','Top páginas')+tabBtn('gained','↑ Crecimiento')+tabBtn('lost','↓ Caídas')+'</div>';
+    content += '<div style="display:flex;align-items:center;gap:10px">'+
+      '<div style="display:flex;gap:4px">'+rangeOpts.map(function(r){ return rangeBtn(r[0],r[1]); }).join('')+'</div>'+
+      '<div style="width:1px;height:14px;background:#E2E8F0"></div>'+
+      '<div style="display:flex;gap:6px">'+tabBtn('top','Top páginas')+tabBtn('gained','↑ Crecimiento')+tabBtn('lost','↓ Caídas')+'</div>'+
+    '</div>';
     content += '</div>';
 
-    if(S.snapshots.length >= 2) {
+    var fsnaps = filteredSnaps();
+    if(fsnaps.length >= 2) {
       var chartLabels, chartSeries, chartFooter;
       if(S.overviewFocusUrl) {
-        var ut = buildURLTrend(S.overviewFocusUrl);
+        var ut = buildURLTrend(S.overviewFocusUrl, fsnaps);
         chartLabels = ut.map(function(d){ return d.label; });
         chartSeries = [
           { label:'Clics',    values: ut.map(function(d){ return d.clics; }), color:'#E85249' },
@@ -970,7 +994,7 @@ function buildHTML(){
           '<span style="font-size:10px;color:#aaa">Posición: eje derecho — valores más bajos = mejor ranking</span>'+
           '</div>';
       } else {
-        var td = buildTrendData();
+        var td = buildTrendData(fsnaps);
         chartLabels = td.map(function(d){ return d.label; });
         chartSeries = [
           { label:'Clics',       values: td.map(function(d){ return d.clics; }), color:'#E85249' },

@@ -278,10 +278,15 @@ function fetchGSCSites() {
     if (sites.length > 1 && !S.gscSiteUrl) {
       S.tab = 'configuración';
       render();
-      toast('✓ Conectado — elige la propiedad correcta y pulsa "↓ Importar semanas"');
+      toast('✓ Conectado — elige la propiedad en Configuración');
     } else {
       render();
       toast('✓ Search Console conectado — ' + sites.length + ' propiedad(es)');
+      // Auto-import on first connect or if no data yet
+      if (!S.snapshots.length && S.gscSiteUrl) {
+        S.gscWeeks = RANGE_WEEKS[S.overviewRange || '3m'] || 13;
+        importFromGSC();
+      }
     }
   });
 }
