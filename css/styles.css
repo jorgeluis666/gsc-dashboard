@@ -8,7 +8,7 @@
   --bg:            #F3F4F6;
   --card:          #FFFFFF;
   --border:        #E2E8F0;
-  --brand:         #2563EB; --brand-soft:  #DBEAFE; --brand-text:  #1D4ED8;
+  --brand:         #E85249; --brand-soft:  #FDECEA; --brand-text:  #C0342D;
   --green:         #059669; --green-soft:  #D1FAE5; --green-text:  #047857;
   --amber:         #D97706; --amber-soft:  #FEF3C7; --amber-text:  #B45309;
   --red:           #DC2626; --red-soft:    #FEE2E2; --red-text:    #B91C1C;
@@ -44,12 +44,12 @@ button,input,select,textarea{font-family:inherit}
 .s-group-lbl{font-size:10.5px;text-transform:uppercase;color:var(--sidebar-muted);letter-spacing:.07em;padding:12px 20px 4px;font-weight:600}
 .s-item{display:flex;align-items:center;gap:10px;padding:9px 14px;margin:1px 8px;border-radius:var(--r-sm);color:var(--sidebar-text);font-size:13.5px;font-weight:500;cursor:pointer;transition:background .15s;user-select:none;border:none;background:transparent;width:calc(100% - 16px);text-align:left;letter-spacing:-.01em}
 .s-item:hover{background:rgba(255,255,255,.06);color:#fff}
-.s-item.active{background:rgba(37,99,235,.18);color:#60A5FA}
+.s-item.active{background:rgba(232,82,73,.18);color:#F4A09B}
 .s-item svg{width:15px;height:15px;stroke-width:1.7;flex-shrink:0;fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
 .s-item.hi{color:#F87171}
 .s-item.hi.active{background:rgba(220,38,38,.18);color:#FCA5A5}
 .s-num{margin-left:auto;font-size:10px;color:var(--sidebar-muted);font-weight:600;background:rgba(255,255,255,.06);padding:1px 6px;border-radius:10px}
-.s-num.has{background:rgba(37,99,235,.22);color:#93C5FD}
+.s-num.has{background:rgba(232,82,73,.22);color:#F4A09B}
 
 /* Main */
 .main{flex:1;overflow-y:auto;display:flex;flex-direction:column;min-width:0}
@@ -203,7 +203,7 @@ td.red{color:var(--red);font-weight:600}
 .track-url-meta{font-size:11px;color:var(--muted);margin-top:2px}
 .track-progress{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px;margin-top:8px}
 .track-week{background:#F8FAFC;border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 10px;text-align:center}
-.track-week.has-data{background:var(--brand-soft);border-color:#BFDBFE}
+.track-week.has-data{background:var(--brand-soft);border-color:#F4A09B}
 .track-week.p1{background:var(--green-soft);border-color:#A7F3D0}
 .track-week-lbl{font-size:10px;color:var(--muted);font-weight:600;margin-bottom:4px}
 .track-week-val{font-size:13px;font-weight:600;color:var(--text)}
@@ -227,7 +227,7 @@ td.red{color:var(--red);font-weight:600}
 ═══════════════════════════════════════════ */
 .drive-status{display:flex;align-items:center;gap:8px;font-size:12px;padding:8px 14px;border-radius:var(--r-sm);font-weight:500}
 .drive-status.connected{background:var(--green-soft);color:var(--green-text);border:1px solid #A7F3D0}
-.drive-status.loading{background:var(--brand-soft);color:var(--brand-text);border:1px solid #BFDBFE}
+.drive-status.loading{background:var(--brand-soft);color:var(--brand-text);border:1px solid #F4A09B}
 
 /* ═══════════════════════════════════════════
    SNAPSHOT ITEMS

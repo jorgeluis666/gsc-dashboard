@@ -562,8 +562,7 @@ function buildHTML(){
     { id:'páginas',        label:'Páginas',          group:'Análisis' },
     { id:'variación',      label:'Variación',        group:'Análisis', hi:true, req2:true },
     { id:'ideas',          label:'Ideas',            group:'Acciones' },
-    { id:'configuración',  label:'Configuración',    group:'Config' },
-    { id:'snapshots',      label:'Snapshots',        group:'Config' }
+    { id:'configuración',  label:'Configuración',    group:'Config' }
   ].filter(function(t){ return !t.req2 || S.snapshots.length > 1; });
 
   // ── SIDEBAR ──
@@ -635,15 +634,12 @@ function buildHTML(){
     '<div class="topbar-left">'+
       '<span class="topbar-sep">|</span>'+
       '<span class="topbar-title">'+esc(tabLabel)+'</span>'+
-      periodBadge+
       (S.refreshing?'<span style="font-size:11px;color:var(--muted)">Sincronizando...</span>':'')+
     '</div>'+
     '<div class="topbar-right">'+
       gscBtn+
       refreshBtn+
       (S.driveStatus==='connected'?'<button class="btn btn-sm" onclick="disconnectDrive()">✕ Drive</button>':'')+
-      '<button class="btn btn-sm primary" onclick="document.getElementById(\'fi\').click()">↑ Subir CSV</button>'+
-      '<input type="file" id="fi" multiple accept=".csv" style="display:none">'+
     '</div>'+
   '</div>';
 
@@ -653,7 +649,7 @@ function buildHTML(){
   // ── SIN DATOS — pantalla de bienvenida ──
   if(!hasSnaps && S.tab !== 'configuración' && S.tab !== 'snapshots'){
     var connectBlock = S.gscStatus === 'connected'
-      ? '<button onclick="importFromGSC()" style="display:inline-flex;align-items:center;gap:10px;background:#2563EB;color:#fff;border:none;border-radius:12px;padding:14px 32px;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(37,99,235,.35)">'+
+      ? '<button onclick="importFromGSC()" style="display:inline-flex;align-items:center;gap:10px;background:#E85249;color:#fff;border:none;border-radius:12px;padding:14px 32px;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(232,82,73,.35)">'+
           '<svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:none;stroke:#fff;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="3" x2="12" y2="21"/></svg>'+
           'Importar datos de Search Console</button>'
       : '<button onclick="connectGSC()" style="display:inline-flex;align-items:center;gap:12px;background:#fff;border:1.5px solid #E2E8F0;border-radius:12px;padding:14px 32px;font-size:15px;font-weight:700;color:#1E293B;cursor:pointer;box-shadow:0 4px 20px rgba(0,0,0,.08)" '+(S.gscStatus==='loading'?'disabled':'')+'>'+
@@ -668,11 +664,11 @@ function buildHTML(){
         ' ondragover="event.preventDefault();this.style.background=\'#EFF6FF\'" ondragleave="this.style.background=\'\'" ondrop="event.preventDefault();this.style.background=\'\';processFiles(event.dataTransfer.files)">'+
 
         '<!-- icon -->'+
-        '<div style="width:72px;height:72px;background:linear-gradient(135deg,#2563EB,#1D4ED8);border-radius:20px;display:flex;align-items:center;justify-content:center;margin-bottom:1.5rem;box-shadow:0 8px 24px rgba(37,99,235,.3)">'+
+        '<div style="width:72px;height:72px;background:linear-gradient(135deg,#E85249,#C0342D);border-radius:20px;display:flex;align-items:center;justify-content:center;margin-bottom:1.5rem;box-shadow:0 8px 24px rgba(232,82,73,.3)">'+
           '<svg viewBox="0 0 24 24" style="width:36px;height:36px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>'+
         '</div>'+
 
-        '<h1 style="font-size:28px;font-weight:800;color:#0F172A;margin:0 0 10px;text-align:center;letter-spacing:-.5px">Content <span style="color:#2563EB">SEO</span> Booster</h1>'+
+        '<h1 style="font-size:28px;font-weight:800;color:#0F172A;margin:0 0 10px;text-align:center;letter-spacing:-.5px">Content <span style="color:#E85249">SEO</span> Booster</h1>'+
         '<p style="font-size:15px;color:#64748B;margin:0 0 2.5rem;text-align:center;max-width:400px;line-height:1.6">'+
           'Conecta tu cuenta de Google para importar<br>datos de Search Console automáticamente.'+
         '</p>'+
@@ -762,7 +758,7 @@ function buildHTML(){
       content +=
       '<div class="setup-card" style="text-align:center;padding:2.5rem 2rem">'+
         '<div style="width:56px;height:56px;background:#EFF6FF;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem">'+
-          '<svg viewBox="0 0 24 24" style="width:26px;height:26px;fill:none;stroke:#2563EB;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'+
+          '<svg viewBox="0 0 24 24" style="width:26px;height:26px;fill:none;stroke:#E85249;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'+
         '</div>'+
         '<div style="font-weight:700;font-size:16px;margin-bottom:6px">Importar desde Search Console</div>'+
         '<div style="font-size:13px;color:#64748B;margin-bottom:1.8rem">Conecta tu cuenta de Google para importar<br>los datos de GSC directamente al dashboard</div>'+
@@ -899,9 +895,9 @@ function buildHTML(){
       }
       var safeUrl = url.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
       var focused = S.overviewFocusUrl === url;
-      var lupaBg  = focused ? '#2563EB' : 'transparent';
+      var lupaBg  = focused ? '#E85249' : 'transparent';
       var lupaCol = focused ? '#fff' : '#94a3b8';
-      var lupaBdr = focused ? '#2563EB' : '#e2e8f0';
+      var lupaBdr = focused ? '#E85249' : '#e2e8f0';
       var lupaTarget = focused ? 'null' : ("'"+safeUrl+"'");
       var lupaBtn = '<button onclick="S.overviewFocusUrl='+lupaTarget+';render()" title="Ver en gráfico" '+
         'style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;'+
@@ -940,9 +936,9 @@ function buildHTML(){
     var ovSec = S.overviewSection || 'top';
     function tabBtn(key, label) {
       var active = ovSec === key;
-      var bg = active ? '#2563EB' : 'transparent';
+      var bg = active ? '#E85249' : 'transparent';
       var col = active ? '#fff' : '#666';
-      var bdr = active ? '#2563EB' : '#ddd';
+      var bdr = active ? '#E85249' : '#ddd';
       return '<button onclick="S.overviewSection=\''+key+'\';render()" style="font-size:11px;padding:4px 12px;border-radius:20px;border:1px solid '+bdr+';background:'+bg+';color:'+col+';cursor:pointer">'+label+'</button>';
     }
 
@@ -957,12 +953,12 @@ function buildHTML(){
         var ut = buildURLTrend(S.overviewFocusUrl);
         chartLabels = ut.map(function(d){ return d.label; });
         chartSeries = [
-          { label:'Clics',    values: ut.map(function(d){ return d.clics; }), color:'#2563EB' },
+          { label:'Clics',    values: ut.map(function(d){ return d.clics; }), color:'#E85249' },
           { label:'Impr.',    values: ut.map(function(d){ return d.impr;  }), color:'#059669', dashed:true },
           { label:'Posición', values: ut.map(function(d){ return d.pos;   }), color:'#DC2626', yRight:true }
         ];
         chartFooter = '<div style="display:flex;align-items:center;gap:10px;padding:4px 0 6px">'+
-          '<span style="font-size:10px;color:#2563EB;font-weight:600">'+esc(shortURL(S.overviewFocusUrl))+'</span>'+
+          '<span style="font-size:10px;color:#E85249;font-weight:600">'+esc(shortURL(S.overviewFocusUrl))+'</span>'+
           '<button onclick="S.overviewFocusUrl=null;render()" style="font-size:10px;padding:2px 8px;border:1px solid #ddd;border-radius:12px;background:transparent;cursor:pointer;color:#666">× Total sitio</button>'+
           '<span style="font-size:10px;color:#aaa">Posición: eje derecho — valores más bajos = mejor ranking</span>'+
           '</div>';
@@ -970,7 +966,7 @@ function buildHTML(){
         var td = buildTrendData();
         chartLabels = td.map(function(d){ return d.label; });
         chartSeries = [
-          { label:'Clics',       values: td.map(function(d){ return d.clics; }), color:'#2563EB' },
+          { label:'Clics',       values: td.map(function(d){ return d.clics; }), color:'#E85249' },
           { label:'Impresiones', values: td.map(function(d){ return d.impr;  }), color:'#059669', dashed:true },
           { label:'Posición',    values: td.map(function(d){ return d.pos;   }), color:'#DC2626', yRight:true }
         ];
@@ -1080,7 +1076,7 @@ function buildHTML(){
         var vtLabels = vtd.map(function(d){ return d.label; });
         content += '<div class="panel" style="padding:1rem 1.2rem 0.6rem">';
         content += svgLineChart(vtLabels, [
-          { label:'Clics',       values: vtd.map(function(d){ return d.clics; }), color:'#2563EB' },
+          { label:'Clics',       values: vtd.map(function(d){ return d.clics; }), color:'#E85249' },
           { label:'Impresiones', values: vtd.map(function(d){ return d.impr;  }), color:'#059669', dashed:true },
           { label:'Posición',    values: vtd.map(function(d){ return d.pos;   }), color:'#DC2626', yRight:true }
         ], { height:200, invertRight:true });
@@ -1168,7 +1164,7 @@ function buildHTML(){
             var uTrend = buildURLTrend(tracked.url);
             content += '<div style="margin-top:10px">';
             content += svgLineChart(uLabels, [
-              { label:'Clics',    values: uTrend.map(function(d){ return d.clics; }), color:'#2563EB' },
+              { label:'Clics',    values: uTrend.map(function(d){ return d.clics; }), color:'#E85249' },
               { label:'Impr.',    values: uTrend.map(function(d){ return d.impr;  }), color:'#059669', dashed:true },
               { label:'Posición', values: uTrend.map(function(d){ return d.pos;   }), color:'#DC2626', yRight:true }
             ], { height:170, invertRight:true });
