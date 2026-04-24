@@ -22,6 +22,11 @@ var S = {
   // pending manual upload
   pending: null,
   pendingLabel: '',
+  // direct api data (not persisted)
+  gscData: null,
+  gscCompareData: null,
+  gscLoading: false,
+  overviewFocusData: null,
   // ui
   refreshing: false,
   overviewSection: 'top',  // top | gained | lost
@@ -121,12 +126,33 @@ function posClass(p){return p<=10?'pg1':p<=20?'pg2':'pg3';}
 function posLbl(p){return p<=10?'Pág. 1':p<=20?'Pág. 2':'Pág. '+Math.ceil(p/10);}
 function posColor(p){return p<=10?'up':p<=20?'am':'dn';}
 function calcM(snap){
-  if(!snap)return null;
+  if(!snap||!snap.data)return null;
   var g=snap.data.grafico||[];
+  if(!g.length)return null;
   var tc=g.reduce(function(s,r){return s+pN(r.Clics);},0);
   var ti=g.reduce(function(s,r){return s+pN(r.Impresiones);},0);
-  var lr=g[g.length-1]||{};
-  return{clics:tc,impr:ti,ctr:ti>0?(tc/ti*100):0,pos:pP(lr['Posición'])};
+  var posRows=g.filter(function(r){return pP(r['Posición'])>0;});
+  var avgPos=posRows.length?posRows.reduce(function(s,r){return s+pP(r['Posición']);},0)/posRows.length:0;
+  return{clics:tc,impr:ti,ctr:ti>0?(tc/ti*100):0,pos:avgPos};
+}
+
+function aggregateByWeek(rows) {
+  if (!rows || !rows.length) return [];
+  var buckets = {};
+  rows.forEach(function(r) {
+    var fecha = r['Fecha'] || '';
+    if (!fecha) return;
+    var wk = typeof isoWeekLabel === 'function' ? isoWeekLabel(fecha) : fecha.slice(0, 7);
+    if (!buckets[wk]) buckets[wk] = { label: wk, clics: 0, impr: 0, posSum: 0, cnt: 0 };
+    buckets[wk].clics += pN(r.Clics);
+    buckets[wk].impr  += pN(r.Impresiones);
+    var pos = pP(r['Posición']);
+    if (pos > 0) { buckets[wk].posSum += pos; buckets[wk].cnt++; }
+  });
+  return Object.keys(buckets).sort().map(function(wk) {
+    var b = buckets[wk];
+    return { label: wk, clics: b.clics, impr: b.impr, pos: b.cnt ? b.posSum / b.cnt : 0 };
+  });
 }
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function deltaHTML(pos,pp){
@@ -247,7 +273,7 @@ function deleteSnap(idx){
 
 // ── ANALYSIS ─────────────────────────────────────────────
 function analyzeOpp(cur){
-  var Q=cur.data.consultas||[],P=cur.data.paginas||[];
+  var Q=(cur&&cur.data?cur.data.consultas:[])||[],P=(cur&&cur.data?cur.data.paginas:[])||[];
   return{
     quickwins: Q.filter(function(r){var p=pP(r['Posición']);return p>=11&&p<=20&&pN(r.Impresiones)>=30&&pN(r.Clics)===0;}).sort(function(a,b){return pN(b.Impresiones)-pN(a.Impresiones);}).slice(0,8),
     ctrGap:    Q.filter(function(r){return pP(r['Posición'])<=15&&pN(r.Impresiones)>=20&&pN(r.Clics)===0;}).sort(function(a,b){return pN(b.Impresiones)-pN(a.Impresiones);}).slice(0,8),
@@ -258,8 +284,8 @@ function analyzeOpp(cur){
 
 function analyzeVar(cur,prev){
   var res=[];
-  var cQ=cur.data.consultas||[],pQ=prev.data.consultas||[];
-  var cP=cur.data.paginas||[],pP2=prev.data.paginas||[];
+  var cQ=(cur&&cur.data?cur.data.consultas:[])||[],pQ=(prev&&prev.data?prev.data.consultas:[])||[];
+  var cP=(cur&&cur.data?cur.data.paginas:[])||[],pP2=(prev&&prev.data?prev.data.paginas:[])||[];
   cQ.forEach(function(cr){
     var q=cr['Consultas principales']||'';
     var pr=pQ.find(function(r){return(r['Consultas principales']||'').toLowerCase()===q.toLowerCase();});
@@ -498,7 +524,12 @@ function setPendingModalTab(t) { S.modalTab = t; render(); }
 
 function setPendingCompareRange(r) { S.pendingCompareRange = r; render(); }
 
-function disableCompare() { S.compareEnabled = false; saveState(); render(); }
+function disableCompare() {
+  S.compareEnabled = false;
+  S.gscCompareData = null;
+  saveState();
+  render();
+}
 
 function applyDateFilter() {
   if (S.modalTab === 'comparar') {
@@ -512,7 +543,10 @@ function applyDateFilter() {
     }
     S.compareEnabled = true;
     S.showDateModal  = false;
-    saveState(); render(); return;
+    saveState();
+    if (S.gscStatus === 'connected' && S.gscSiteUrl) fetchGSCCompareData();
+    else render();
+    return;
   }
   // ── Filtrar tab ──
   var fromEl = document.getElementById('dm-from');
@@ -522,23 +556,20 @@ function applyDateFilter() {
     S.overviewDateTo   = toEl   ? toEl.value   : S.pendingDateTo;
     if (!S.overviewDateFrom || !S.overviewDateTo) { toast('Ingresa las dos fechas'); return; }
   }
-  S.overviewRange = S.pendingRange;
-  S.showDateModal = false;
-  if (S.overviewRange !== 'custom') {
-    S.gscWeeks = RANGE_WEEKS[S.overviewRange] || 13;
-    saveState();
-    if (S.gscStatus === 'connected' && S.gscSiteUrl) { importFromGSC(); return; }
-  } else {
-    saveState();
-  }
-  render();
+  S.overviewRange   = S.pendingRange;
+  S.showDateModal   = false;
+  S.gscCompareData  = null;
+  saveState();
+  if (S.gscStatus === 'connected' && S.gscSiteUrl) fetchGSCData();
+  else render();
 }
 
 function setOverviewRange(r) {
-  S.overviewRange = r;
-  S.gscWeeks = RANGE_WEEKS[r] || 13;
+  S.overviewRange  = r;
+  S.gscData        = null;
+  S.gscCompareData = null;
   saveState();
-  if (S.gscStatus === 'connected' && S.gscSiteUrl) importFromGSC();
+  if (S.gscStatus === 'connected' && S.gscSiteUrl) fetchGSCData();
   else render();
 }
 
@@ -718,7 +749,17 @@ function buildHTML(){
       '</div></div></div>';
   }
 
+  var usingDirect = !!S.gscData;
   var hasSnaps = S.snapshots.length > 0;
+  var hasData  = usingDirect || hasSnaps;
+  var cur  = usingDirect ? { data: S.gscData }         : S.snapshots[S.curIdx];
+  var prev = usingDirect ? (S.gscCompareData ? { data: S.gscCompareData } : null)
+                         : (S.curIdx > 0 ? S.snapshots[S.curIdx - 1] : null);
+  // Label shown in "vs ___" comparisons
+  var prevLabel = usingDirect && S.gscCompareData
+    ? ((S.gscCompareData.startDate||'') + ' – ' + (S.gscCompareData.endDate||''))
+    : (prev && prev.label ? prev.label : 'período anterior');
+
   var TABS_DEF = [
     { id:'overview',       label:'Overview',         group:'Análisis' },
     { id:'seguimiento',    label:'Artículos blog',   group:'Análisis' },
@@ -727,7 +768,7 @@ function buildHTML(){
     { id:'variación',      label:'Variación',        group:'Acciones', hi:true, req2:true },
     { id:'ideas',          label:'Ideas',            group:'Acciones' },
     { id:'configuración',  label:'Configuración',    group:'Configuración' }
-  ].filter(function(t){ return !t.req2 || S.snapshots.length > 1; });
+  ].filter(function(t){ return !t.req2 || (usingDirect ? !!S.gscCompareData : S.snapshots.length > 1); });
 
   // ── SIDEBAR ──
   var prevGroup='';
@@ -791,7 +832,7 @@ function buildHTML(){
     ? '<button class="btn success btn-sm" onclick="refreshFromDrive()" '+(S.refreshing?'disabled':'')+'>'+(S.refreshing?'<span class="spinning">↻</span> Actualizando':'↻ Drive')+'</button>'
     : '';
   var gscBtn = S.gscStatus==='connected' && S.gscSiteUrl
-    ? '<button class="btn btn-sm" style="background:#059669;color:#fff;border-color:#059669" onclick="importFromGSC()" '+(S.gscImporting?'disabled':'')+'>'+(S.gscImporting?'<span class="spinning">↻</span> Importando':'↓ GSC')+'</button>'
+    ? '<button class="btn btn-sm" style="background:#059669;color:#fff;border-color:#059669" onclick="fetchGSCData()" '+(S.gscLoading?'disabled':'')+'>'+(S.gscLoading?'<span class="spinning">↻</span> Cargando':'↻ GSC')+'</button>'
     : '';
 
   var topbar = '<div class="topbar">'+
@@ -810,12 +851,22 @@ function buildHTML(){
   // ── CONTENT ──
   var content = '';
 
+  // ── CARGANDO — spinner mientras llegan datos ──
+  if (S.gscLoading && S.tab !== 'configuración') {
+    content = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:320px;gap:14px">'+
+      '<span class="spinning" style="font-size:36px;color:var(--brand)">↻</span>'+
+      '<p style="color:#64748B;font-size:14px;font-weight:500">Cargando datos de Google Search Console…</p>'+
+      '<p style="color:#94A3B8;font-size:12px">'+(S.gscData?'':'Conectando con la API…')+'</p>'+
+      '</div>';
+    return '<div class="shell">'+sidebar+'<main class="main">'+topbar+'<div class="content">'+content+'</div></main></div>';
+  }
+
   // ── SIN DATOS — pantalla de bienvenida ──
-  if(!hasSnaps && S.tab !== 'configuración' && S.tab !== 'snapshots'){
+  if(!hasData && S.tab !== 'configuración' && S.tab !== 'snapshots'){
     var connectBlock = S.gscStatus === 'connected'
-      ? '<button onclick="importFromGSC()" style="display:inline-flex;align-items:center;gap:10px;background:#E85249;color:#fff;border:none;border-radius:12px;padding:14px 32px;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(232,82,73,.35)">'+
+      ? '<button onclick="fetchGSCData()" style="display:inline-flex;align-items:center;gap:10px;background:#E85249;color:#fff;border:none;border-radius:12px;padding:14px 32px;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(232,82,73,.35)">'+
           '<svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:none;stroke:#fff;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="3" x2="12" y2="21"/></svg>'+
-          'Importar datos de Search Console</button>'
+          'Cargar datos de Search Console</button>'
       : '<button onclick="connectGSC()" style="display:inline-flex;align-items:center;gap:12px;background:#fff;border:1.5px solid #E2E8F0;border-radius:12px;padding:14px 32px;font-size:15px;font-weight:700;color:#1E293B;cursor:pointer;box-shadow:0 4px 20px rgba(0,0,0,.08)" '+(S.gscStatus==='loading'?'disabled':'')+'>'+
           (S.gscStatus==='loading'
             ? '<span class="spinning" style="font-size:18px">↻</span> Conectando…'
@@ -965,9 +1016,8 @@ function buildHTML(){
     return '<div class="shell">'+sidebar+'<main class="main">'+topbar+'<div class="content">'+content+'</div></main></div>';
   }
 
-  var cur  = S.snapshots[S.curIdx];
-  var prev = S.curIdx > 0 ? S.snapshots[S.curIdx - 1] : null;
-  var curM = calcM(cur), prevM = calcM(prev);
+  var curM = calcM(cur) || { clics: 0, impr: 0, ctr: 0, pos: 0 };
+  var prevM = prev ? calcM(prev) : null;
 
   // ── OVERVIEW ──
   if(S.tab==='overview'){
@@ -995,9 +1045,9 @@ function buildHTML(){
       kpiCard('Posición media',curM.pos,prevM&&prevM.pos,function(v){return v.toFixed(1);},'',true,'slate','<svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.4 7.4 11.5 7.7 11.8a.5.5 0 0 0 .6 0C12.6 21.5 20 15.4 20 10a8 8 0 0 0-8-8z"/></svg>')+
     '</div>';
 
-    var pages = cur.data.paginas || [];
+    var pages = (cur && cur.data ? cur.data.paginas : []) || [];
     var topClics = pages.slice().sort(function(a,b){return pN(b.Clics)-pN(a.Clics);}).slice(0,8);
-    var prevPages = prev ? (prev.data.paginas || []) : [];
+    var prevPages = prev && prev.data ? ((prev&&prev.data?prev.data.paginas:[]) || []) : [];
 
     function findPrev(url){ return prevPages.find(function(r){return(r['Páginas principales']||'')===url;})||null; }
 
@@ -1018,14 +1068,13 @@ function buildHTML(){
     var topDropClics = withDelta.filter(function(r){return r.dClics<0;}).sort(function(a,b){return a.dClics-b.dClics;}).slice(0,8);
     var topDropImpr  = withDelta.filter(function(r){return r.dImpr<0;}).sort(function(a,b){return a.dImpr-b.dImpr;}).slice(0,8);
 
-    // ── Sparkline: clicks for a URL across all snapshots ──
+    // ── Sparkline: clicks trend for a URL ──
     function sparkFor(url) {
-      var n = S.snapshots.length;
+      var weekly = td; // aggregated trend data already computed above
+      var n = weekly.length;
       if(n < 2) return '';
-      var vals = S.snapshots.map(function(s) {
-        var row = (s.data.paginas||[]).find(function(r){ return (r['Páginas principales']||'')===url; });
-        return row ? pN(row.Clics) : 0;
-      });
+      // For direct API: use the overall weekly trend as approximation (individual URL requires extra fetch)
+      var vals = weekly.map(function(w){ return w.clics; });
       var w=80, h=20, pad=2;
       var max=Math.max.apply(null,vals)||1;
       var pts=vals.map(function(v,i){
@@ -1057,8 +1106,14 @@ function buildHTML(){
       var lupaBg  = focused ? '#E85249' : 'transparent';
       var lupaCol = focused ? '#fff' : '#94a3b8';
       var lupaBdr = focused ? '#E85249' : '#e2e8f0';
-      var lupaTarget = focused ? 'null' : ("'"+safeUrl+"'");
-      var lupaBtn = '<button onclick="S.overviewFocusUrl='+lupaTarget+';render()" title="Ver en gráfico" '+
+      var lupaTarget = focused
+        ? 'null;S.overviewFocusData=null'
+        : ("'"+safeUrl+"'");
+      var lupaAction = focused
+        ? 'S.overviewFocusUrl=null;S.overviewFocusData=null;render()'
+        : (usingDirect ? 'S.overviewFocusUrl=\''+safeUrl+'\';S.overviewFocusData=null;fetchURLFocus(\''+safeUrl+'\')'
+                       : 'S.overviewFocusUrl=\''+safeUrl+'\';render()');
+      var lupaBtn = '<button onclick="'+lupaAction+'" title="Ver en gráfico" '+
         'style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;'+
         'border:1px solid '+lupaBdr+';border-radius:4px;background:'+lupaBg+';color:'+lupaCol+';cursor:pointer;padding:0;vertical-align:middle">'+
         lupaIcon+'</button>';
@@ -1125,53 +1180,54 @@ function buildHTML(){
     '</div>';
     content += '</div>';
 
-    var fsnaps   = filteredSnaps();
-    var csnaps   = compareSnaps();
-    if(fsnaps.length >= 2) {
+    // ── Chart data source: direct API (daily→weekly) or snapshots ──
+    var td = usingDirect ? aggregateByWeek(S.gscData.grafico || []) : buildTrendData(filteredSnaps());
+    var ctd = usingDirect
+      ? (S.gscCompareData ? aggregateByWeek(S.gscCompareData.grafico || []) : [])
+      : (compareSnaps().length ? buildTrendData(compareSnaps()) : []);
+
+    if(td.length >= 2) {
       var chartLabels, chartSeries, chartFooter;
       if(S.overviewFocusUrl) {
-        var ut = buildURLTrend(S.overviewFocusUrl, fsnaps);
-        chartLabels = ut.map(function(d){ return d.label; });
-        chartSeries = [
-          { label:'Clics',    values: ut.map(function(d){ return d.clics; }), color:'#E85249' },
-          { label:'Impr.',    values: ut.map(function(d){ return d.impr;  }), color:'#059669', dashed:true },
-          { label:'Posición', values: ut.map(function(d){ return d.pos;   }), color:'#DC2626', yRight:true }
-        ];
-        chartFooter = '<div style="display:flex;align-items:center;gap:10px;padding:4px 0 6px">'+
-          '<span style="font-size:10px;color:#E85249;font-weight:600">'+esc(shortURL(S.overviewFocusUrl))+'</span>'+
-          '<button onclick="S.overviewFocusUrl=null;render()" style="font-size:10px;padding:2px 8px;border:1px solid #ddd;border-radius:12px;background:transparent;cursor:pointer;color:#666">× Total sitio</button>'+
-          '<span style="font-size:10px;color:#aaa">Posición: eje derecho — valores más bajos = mejor ranking</span>'+
-          '</div>';
+        var focusRows = usingDirect ? aggregateByWeek(S.overviewFocusData || []) : [];
+        if (usingDirect && !S.overviewFocusData) {
+          fetchURLFocus(S.overviewFocusUrl);
+          chartLabels = []; chartSeries = [];
+          chartFooter = '<p style="font-size:10px;color:#aaa;padding:4px 0 6px">Cargando tendencia de URL…</p>';
+        } else {
+          var ut = usingDirect ? focusRows : buildURLTrend(S.overviewFocusUrl, filteredSnaps());
+          chartLabels = ut.map(function(d){ return d.label; });
+          chartSeries = [
+            { label:'Clics', values: ut.map(function(d){ return d.clics; }), color:'#E85249' },
+            { label:'Impr.', values: ut.map(function(d){ return d.impr;  }), color:'#059669', dashed:true }
+          ];
+          chartFooter = '<div style="display:flex;align-items:center;gap:10px;padding:4px 0 6px">'+
+            '<span style="font-size:10px;color:#E85249;font-weight:600">'+esc(shortURL(S.overviewFocusUrl))+'</span>'+
+            '<button onclick="S.overviewFocusUrl=null;S.overviewFocusData=null;render()" style="font-size:10px;padding:2px 8px;border:1px solid #ddd;border-radius:12px;background:transparent;cursor:pointer;color:#666">× Total sitio</button>'+
+            '</div>';
+        }
       } else {
-        var td = buildTrendData(fsnaps);
         chartLabels = td.map(function(d){ return d.label; });
         chartSeries = [
           { label:'Clics',       values: td.map(function(d){ return d.clics; }), color:'#E85249' },
           { label:'Impresiones', values: td.map(function(d){ return d.impr;  }), color:'#059669', dashed:true },
           { label:'Posición',    values: td.map(function(d){ return d.pos;   }), color:'#DC2626', yRight:true }
         ];
-        // Add comparison series if compare is enabled and has data
-        if (csnaps.length >= 1) {
-          var ctd = buildTrendData(csnaps);
-          var maxLen = Math.max(chartLabels.length, ctd.length);
-          // Pad shorter array with nulls so both series share same x-positions
+        if (ctd.length >= 1) {
           function padTo(arr, len) { var a=arr.slice(); while(a.length<len) a.unshift(null); return a; }
-          var mainClics = padTo(td.map(function(d){ return d.clics; }), maxLen);
-          var mainImpr  = padTo(td.map(function(d){ return d.impr;  }), maxLen);
-          var compClics = padTo(ctd.map(function(d){ return d.clics; }), maxLen);
-          var compImpr  = padTo(ctd.map(function(d){ return d.impr;  }), maxLen);
+          var maxLen = Math.max(chartLabels.length, ctd.length);
           chartLabels = padTo(chartLabels, maxLen);
           chartSeries = [
-            { label:'Clics',       values: mainClics, color:'#E85249' },
-            { label:'Impresiones', values: mainImpr,  color:'#059669', dashed:true },
-            { label:'Clics (ant.)',       values: compClics, color:'rgba(232,82,73,0.4)' },
-            { label:'Impr. (ant.)',       values: compImpr,  color:'rgba(5,150,105,0.4)', dashed:true }
+            { label:'Clics',         values: padTo(td.map(function(d){return d.clics;}),  maxLen), color:'#E85249' },
+            { label:'Impresiones',   values: padTo(td.map(function(d){return d.impr;}),   maxLen), color:'#059669', dashed:true },
+            { label:'Clics (ant.)',  values: padTo(ctd.map(function(d){return d.clics;}), maxLen), color:'rgba(232,82,73,0.4)' },
+            { label:'Impr. (ant.)',  values: padTo(ctd.map(function(d){return d.impr;}),  maxLen), color:'rgba(5,150,105,0.4)', dashed:true }
           ];
         }
         chartFooter = '<p style="font-size:10px;color:#aaa;padding:4px 0 6px">Posición: eje derecho — valores más bajos = mejor ranking</p>';
       }
       content += '<div class="panel" style="padding:1rem 1.2rem 0.6rem">';
-      content += svgLineChart(chartLabels, chartSeries, { height:200, invertRight:true });
+      if (chartLabels && chartLabels.length >= 2) content += svgLineChart(chartLabels, chartSeries, { height:200, invertRight:true });
       content += chartFooter;
       content += '</div>';
     }
@@ -1183,14 +1239,14 @@ function buildHTML(){
       if(!prev){
         content += '<div class="insight info" style="margin-top:8px">Necesitas al menos 2 períodos para ver variaciones.</div>';
       } else {
-        content += '<p style="font-size:11px;color:#555;margin:10px 0 0">Páginas que ganaron clics vs <strong>'+esc(prev.label)+'</strong> (semana anterior)</p>';
+        content += '<p style="font-size:11px;color:#555;margin:10px 0 0">Páginas que ganaron clics vs <strong>'+esc(prevLabel)+'</strong></p>';
         content += pageTable(topGainClics, true, 'dClics', 'promocionar');
       }
     } else if(ovSec==='lost'){
       if(!prev){
         content += '<div class="insight info" style="margin-top:8px">Necesitas al menos 2 períodos para ver variaciones.</div>';
       } else {
-        content += '<p style="font-size:11px;color:#555;margin:10px 0 0">Páginas que perdieron clics vs <strong>'+esc(prev.label)+'</strong> (semana anterior)</p>';
+        content += '<p style="font-size:11px;color:#555;margin:10px 0 0">Páginas que perdieron clics vs <strong>'+esc(prevLabel)+'</strong></p>';
         content += pageTable(topDropClics, true, 'dClics', 'optimizar');
       }
     }
@@ -1198,10 +1254,10 @@ function buildHTML(){
 
   // ── TRANSACCIONALES ──
   if(S.tab==='transaccionales'){
-    var svcP=(cur.data.paginas||[]).filter(function(r){return isSvc(r['Páginas principales']||'');});
-    var paidQ=(cur.data.consultas||[]).filter(function(r){return isPaid(r['Consultas principales']||'');});
-    var fPP=function(url){if(!prev)return null;var f=(prev.data.paginas||[]).find(function(r){return(r['Páginas principales']||'')===url;});return f?pP(f['Posición']):null;};
-    var fPQ=function(q){if(!prev)return null;var f=(prev.data.consultas||[]).find(function(r){return(r['Consultas principales']||'').toLowerCase()===q.toLowerCase();});return f?pP(f['Posición']):null;};
+    var svcP=((cur&&cur.data?cur.data.paginas:[])||[]).filter(function(r){return isSvc(r['Páginas principales']||'');});
+    var paidQ=((cur&&cur.data?cur.data.consultas:[])||[]).filter(function(r){return isPaid(r['Consultas principales']||'');});
+    var fPP=function(url){if(!prev)return null;var f=((prev&&prev.data?prev.data.paginas:[])||[]).find(function(r){return(r['Páginas principales']||'')===url;});return f?pP(f['Posición']):null;};
+    var fPQ=function(q){if(!prev)return null;var f=((prev&&prev.data?prev.data.consultas:[])||[]).find(function(r){return(r['Consultas principales']||'').toLowerCase()===q.toLowerCase();});return f?pP(f['Posición']):null;};
 
     content+='<p class="sec-lbl">Páginas de servicio ('+svcP.length+')</p>';
     content+=!svcP.length?'<div class="insight info">Carga Páginas.csv.</div>':
@@ -1264,20 +1320,26 @@ function buildHTML(){
           '<div class="kpi-icon '+varIconCls[i]+'">'+varIcons[i]+'</div>'+
           '<div class="kpi-lbl">'+lbl+'</div>'+
           '<div class="kpi-val">'+fmt[i](cv)+sfx[i]+'</div>'+
-          '<div class="kpi-delta"><span class="'+(good?'up':'dn')+'">'+(good?'↑':'↓')+' '+fmt[i](Math.abs(d))+sfx[i]+'</span> vs '+esc(prev.label)+'</div>'+
+          '<div class="kpi-delta"><span class="'+(good?'up':'dn')+'">'+(good?'↑':'↓')+' '+fmt[i](Math.abs(d))+sfx[i]+'</span> vs '+esc(prevLabel)+'</div>'+
         '</div>';
       }).join('')+'</div>';
 
       // Trend chart in variación tab
-      if(S.snapshots.length >= 2) {
-        var vtd = buildTrendData();
-        var vtLabels = vtd.map(function(d){ return d.label; });
+      var vtd2 = usingDirect ? aggregateByWeek(S.gscData.grafico || []) : buildTrendData();
+      var ctd2 = usingDirect ? (S.gscCompareData ? aggregateByWeek(S.gscCompareData.grafico || []) : []) : [];
+      if(vtd2.length >= 2) {
+        var vtLabels = vtd2.map(function(d){ return d.label; });
+        var vtSeries = [
+          { label:'Clics',       values: vtd2.map(function(d){ return d.clics; }), color:'#E85249' },
+          { label:'Impresiones', values: vtd2.map(function(d){ return d.impr;  }), color:'#059669', dashed:true },
+          { label:'Posición',    values: vtd2.map(function(d){ return d.pos;   }), color:'#DC2626', yRight:true }
+        ];
+        if (ctd2.length >= 1) {
+          vtSeries.push({ label:'Clics (ant.)',  values: ctd2.map(function(d){return d.clics;}), color:'rgba(232,82,73,0.4)' });
+          vtSeries.push({ label:'Impr. (ant.)',  values: ctd2.map(function(d){return d.impr;}),  color:'rgba(5,150,105,0.4)', dashed:true });
+        }
         content += '<div class="panel" style="padding:1rem 1.2rem 0.6rem">';
-        content += svgLineChart(vtLabels, [
-          { label:'Clics',       values: vtd.map(function(d){ return d.clics; }), color:'#E85249' },
-          { label:'Impresiones', values: vtd.map(function(d){ return d.impr;  }), color:'#059669', dashed:true },
-          { label:'Posición',    values: vtd.map(function(d){ return d.pos;   }), color:'#DC2626', yRight:true }
-        ], { height:200, invertRight:true });
+        content += svgLineChart(vtLabels, vtSeries, { height:200, invertRight:true });
         content += '<p style="font-size:10px;color:var(--muted);padding:4px 0 6px">Posición: eje derecho — valores más bajos = mejor ranking</p>';
         content += '</div>';
       }
@@ -1293,10 +1355,10 @@ function buildHTML(){
 
   // ── ARTÍCULOS BLOG ──
   if(S.tab==='seguimiento'){
-    var allPages  = cur.data.paginas || [];
+    var allPages  = (cur&&cur.data?cur.data.paginas:[]) || [];
     var blogPages = allPages.filter(function(r){ return isBlogArticle(r['Páginas principales']||''); })
                             .sort(function(a,b){ return pN(b.Clics)-pN(a.Clics); });
-    var prevPages2 = prev ? (prev.data.paginas || []) : [];
+    var prevPages2 = prev ? ((prev&&prev.data?prev.data.paginas:[]) || []) : [];
 
     if(!blogPages.length){
       content+='<div class="insight info">No hay artículos de blog en este período.</div>';
@@ -1340,8 +1402,8 @@ function buildHTML(){
 
   // ── IDEAS ──
   if(S.tab==='ideas'){
-    var Q = cur.data.consultas || [];
-    var P = cur.data.paginas   || [];
+    var Q = (cur&&cur.data?cur.data.consultas:[]) || [];
+    var P = (cur&&cur.data?cur.data.paginas:[])   || [];
 
     var clusterIdeas = Q.filter(function(r){
       return pN(r.Impresiones)>=100 && pP(r['Posición'])>20 && pN(r.Clics)===0 && !isPaid(r['Consultas principales']||'');
@@ -1435,18 +1497,18 @@ function buildHTML(){
 
   // ── CONSULTAS ──
   if(S.tab==='consultas'){
-    var allQ=(cur.data.consultas||[]).filter(function(r){return!S.qFilter||(r['Consultas principales']||'').toLowerCase().includes(S.qFilter.toLowerCase());}).slice(0,30);
+    var allQ=((cur&&cur.data?cur.data.consultas:[])||[]).filter(function(r){return!S.qFilter||(r['Consultas principales']||'').toLowerCase().includes(S.qFilter.toLowerCase());}).slice(0,30);
     content+='<input id="q-filter" value="'+esc(S.qFilter)+'" placeholder="Filtrar consultas..." style="width:100%;margin-bottom:10px;padding:6px 10px">';
     content+='<div class="panel-table"><table><thead><tr><th>Consulta</th><th class="r">Clics</th><th class="r">Impr.</th><th class="r">CTR</th><th class="r">Posición</th></tr></thead><tbody>'+
       allQ.map(function(r){var q=r['Consultas principales']||'';var pos=pP(r['Posición']);var paid=isPaid(q);return'<tr style="background:'+(paid?'rgba(24,95,165,0.04)':'transparent')+'"><td>'+(paid?'<span class="dot dot-blue"></span>':'')+esc(q)+'</td><td class="r">'+r.Clics+'</td><td class="r">'+r.Impresiones+'</td><td class="r">'+r.CTR+'</td><td class="r"><span class="'+posColor(pos)+'">'+pos.toFixed(1)+'</span></td></tr>';}).join('')+
       '</tbody></table>';
-    if((cur.data.consultas||[]).length>30)content+='<div style="padding:6px 10px;font-size:10px;color:#aaa;border-top:1px solid #eee">30 de '+(cur.data.consultas||[]).length+' · usa el filtro</div>';
+    if(((cur&&cur.data?cur.data.consultas:[])||[]).length>30)content+='<div style="padding:6px 10px;font-size:10px;color:#aaa;border-top:1px solid #eee">30 de '+((cur&&cur.data?cur.data.consultas:[])||[]).length+' · usa el filtro</div>';
     content+='</div><p style="font-size:10px;color:#aaa;margin-top:6px"><span class="dot dot-blue"></span>consultas transaccionales</p>';
   }
 
   // ── PÁGINAS ──
   if(S.tab==='páginas'){
-    var nonArticlePages=(cur.data.paginas||[]).filter(function(r){return!isBlogArticle(r['Páginas principales']||'');}).sort(function(a,b){return pN(b.Clics)-pN(a.Clics);});
+    var nonArticlePages=((cur&&cur.data?cur.data.paginas:[])||[]).filter(function(r){return!isBlogArticle(r['Páginas principales']||'');}).sort(function(a,b){return pN(b.Clics)-pN(a.Clics);});
     content+='<div class="panel-table"><table><thead><tr><th>URL</th><th class="r">Clics</th><th class="r">Impr.</th><th class="r">CTR</th><th class="r">Posición</th></tr></thead><tbody>'+
       nonArticlePages.map(function(r){var url=r['Páginas principales']||'';var svc=isSvc(url);var pos=pP(r['Posición']);return'<tr style="background:'+(svc?'rgba(216,90,48,0.04)':'transparent')+'"><td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(svc?'<span class="dot dot-red"></span>':'')+esc(shortURL(url))+'</td><td class="r">'+r.Clics+'</td><td class="r">'+r.Impresiones+'</td><td class="r">'+r.CTR+'</td><td class="r"><span class="'+posColor(pos)+'">'+pos.toFixed(1)+'</span><span class="pill '+posClass(pos)+'">'+posLbl(pos)+'</span></td></tr>';}).join('')+
       '</tbody></table></div>';

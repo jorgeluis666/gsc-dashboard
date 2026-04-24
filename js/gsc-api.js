@@ -269,35 +269,109 @@ function fetchGSCSites() {
     }
     S.gscSites  = sites;
     S.gscStatus = 'connected';
-    // Only auto-select if there is exactly ONE property — never guess when there are multiple
     if (!S.gscSiteUrl) {
       S.gscSiteUrl = sites.length === 1 ? sites[0] : '';
     }
     saveState();
-    // Navigate to Configuración so user picks the right property
     if (sites.length > 1 && !S.gscSiteUrl) {
       S.tab = 'configuración';
       render();
       toast('✓ Conectado — elige la propiedad en Configuración');
+    } else if (S.gscSiteUrl) {
+      fetchGSCData();
     } else {
       render();
-      toast('✓ Search Console conectado — ' + sites.length + ' propiedad(es)');
-      // Auto-import on first connect or if no data yet
-      if (!S.snapshots.length && S.gscSiteUrl) {
-        S.gscWeeks = RANGE_WEEKS[S.overviewRange || '3m'] || 13;
-        importFromGSC();
-      }
     }
   });
 }
 
-// ── RESET ALL AND RE-IMPORT ──────────────────────────────
-function resetAndImport() {
-  if (!confirm('Esto borrará todos los snapshots actuales (' + S.snapshots.length + ') e importará datos frescos de "' + S.gscSiteUrl + '".\n\n¿Continuar?')) return;
-  S.snapshots = [];
-  S.curIdx = null;
-  saveState();
-  importFromGSC();
+// ── COMPUTE DATE RANGES ──────────────────────────────────
+function computeDateRange() {
+  if (S.overviewRange === 'custom' && S.overviewDateFrom && S.overviewDateTo) {
+    return { start: S.overviewDateFrom, end: S.overviewDateTo };
+  }
+  var weeks = RANGE_WEEKS[S.overviewRange] || 13;
+  var end = new Date();
+  end.setDate(end.getDate() - 3); // GSC ~3-day data lag
+  var start = new Date(end);
+  start.setDate(start.getDate() - weeks * 7 + 1);
+  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+}
+
+function computeCompareRange() {
+  if (S.compareRange === 'custom' && S.compareDateFrom && S.compareDateTo) {
+    return { start: S.compareDateFrom, end: S.compareDateTo };
+  }
+  var main = computeDateRange();
+  var ms = new Date(main.start), me = new Date(main.end);
+  var days = Math.round((me - ms) / 86400000);
+  if (S.compareRange === 'year') {
+    return {
+      start: new Date(ms.getFullYear()-1, ms.getMonth(), ms.getDate()).toISOString().slice(0,10),
+      end:   new Date(me.getFullYear()-1, me.getMonth(), me.getDate()).toISOString().slice(0,10)
+    };
+  }
+  // 'previous' — same length immediately before
+  var cEnd = new Date(ms); cEnd.setDate(cEnd.getDate() - 1);
+  var cStart = new Date(cEnd); cStart.setDate(cStart.getDate() - days);
+  return { start: cStart.toISOString().slice(0,10), end: cEnd.toISOString().slice(0,10) };
+}
+
+// ── DIRECT API FETCH ─────────────────────────────────────
+function doFetch5(siteUrl, base, callback) {
+  var data = {}, remaining = 5;
+  function done(type, rows) {
+    data[type] = rows;
+    if (--remaining === 0) callback(data);
+  }
+  queryGSC(siteUrl, Object.assign({}, base, { dimensions: ['date'],    rowLimit: 500  }), function(e,r){ done('grafico',      e?[]:rowsToGrafico(r));      });
+  queryGSC(siteUrl, Object.assign({}, base, { dimensions: ['page'],    rowLimit: 1000 }), function(e,r){ done('paginas',      e?[]:rowsToPaginas(r));      });
+  queryGSC(siteUrl, Object.assign({}, base, { dimensions: ['query'],   rowLimit: 1000 }), function(e,r){ done('consultas',    e?[]:rowsToConsultas(r));    });
+  queryGSC(siteUrl, Object.assign({}, base, { dimensions: ['device'],  rowLimit: 10   }), function(e,r){ done('dispositivos', e?[]:rowsToDispositivos(r)); });
+  queryGSC(siteUrl, Object.assign({}, base, { dimensions: ['country'], rowLimit: 100  }), function(e,r){ done('paises',       e?[]:rowsToPaises(r));        });
+}
+
+function fetchGSCData() {
+  if (!S.accessToken || !S.gscSiteUrl) return;
+  var range = computeDateRange();
+  S.gscLoading = true; S.gscData = null; render();
+  doFetch5(S.gscSiteUrl, { startDate: range.start, endDate: range.end }, function(data) {
+    data.startDate = range.start; data.endDate = range.end;
+    S.gscData    = data;
+    S.gscLoading = false;
+    if (S.compareEnabled) {
+      fetchGSCCompareData();
+    } else {
+      S.gscCompareData = null;
+      render();
+      toast('✓ ' + (data.paginas||[]).length + ' páginas · ' + range.start + ' → ' + range.end);
+    }
+  });
+}
+
+function fetchGSCCompareData() {
+  if (!S.accessToken || !S.gscSiteUrl) return;
+  var range = computeCompareRange();
+  doFetch5(S.gscSiteUrl, { startDate: range.start, endDate: range.end }, function(data) {
+    data.startDate = range.start; data.endDate = range.end;
+    S.gscCompareData = data;
+    render();
+    toast('✓ Comparando: ' + range.start + ' → ' + range.end);
+  });
+}
+
+function fetchURLFocus(url) {
+  if (!S.accessToken || !S.gscSiteUrl) return;
+  var range = computeDateRange();
+  queryGSC(S.gscSiteUrl, {
+    startDate: range.start, endDate: range.end,
+    dimensions: ['date'],
+    dimensionFilterGroups: [{ filters: [{ dimension: 'page', operator: 'equals', expression: url }] }],
+    rowLimit: 500
+  }, function(e, r) {
+    S.overviewFocusData = e ? [] : rowsToGrafico(r);
+    render();
+  });
 }
 
 // ── GOOGLE INDEXING API ──────────────────────────────────
@@ -336,19 +410,12 @@ function indexURL(urlIdx) {
   });
 }
 
-// ── SWITCH PROPERTY — clear snapshots and re-import ──────
+// ── SWITCH PROPERTY ──────────────────────────────────────
 function switchGSCProperty(newSiteUrl) {
   if (!newSiteUrl || newSiteUrl === S.gscSiteUrl) return;
-  var hasSnaps = S.snapshots.some(function(s){ return s.gscSource; });
-  if (hasSnaps) {
-    if (!confirm('Cambiar de propiedad borrará los ' + S.snapshots.length + ' snapshots actuales e importará los de "' + newSiteUrl + '".\n\n¿Continuar?')) {
-      render(); return; // revert selector visually
-    }
-    S.snapshots = [];
-    S.curIdx = null;
-  }
-  S.gscSiteUrl = newSiteUrl;
+  S.gscSiteUrl    = newSiteUrl;
+  S.gscData       = null;
+  S.gscCompareData = null;
   saveState();
-  render();
-  toast('Propiedad cambiada a ' + newSiteUrl + ' — pulsa "↓ Importar semanas"');
+  fetchGSCData();
 }
