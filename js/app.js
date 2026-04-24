@@ -611,12 +611,17 @@ function buildHTML(){
   // ── TOPBAR ──
   var tabLabel = (TABS_DEF.find(function(t){return t.id===S.tab;})||{label:S.tab}).label;
 
-  var selSnap='';
-  if(S.snapshots.length>1){
+  // Period badge — non-interactive, shown in topbar as context
+  var periodBadge = '';
+  if(S.snapshots.length > 0 && S.curIdx !== null){
+    var curLbl = S.snapshots[S.curIdx] ? S.snapshots[S.curIdx].label : '';
+    periodBadge = '<span style="font-size:11px;font-weight:600;color:var(--brand);background:var(--brand-soft);padding:3px 10px;border-radius:20px">'+esc(curLbl)+'</span>';
+  }
+
+  var periodSelect = '';
+  if(S.snapshots.length > 1){
     var opts=S.snapshots.map(function(s,i){return'<option value="'+i+'"'+(i===S.curIdx?' selected':'')+'>'+esc(s.label)+'</option>';}).join('');
-    selSnap='<select class="period-select" onchange="S.curIdx=parseInt(this.value);render()">'+opts+'</select>';
-  } else if(S.snapshots.length===1){
-    selSnap='<span style="font-size:11px;font-weight:500;color:var(--text-2);background:#F1F5F9;padding:4px 10px;border-radius:20px">'+esc(S.snapshots[0].label)+'</span>';
+    periodSelect='<select class="period-select" onchange="S.curIdx=parseInt(this.value);render()">'+opts+'</select>';
   }
 
   var refreshBtn = S.driveStatus==='connected'
@@ -629,7 +634,7 @@ function buildHTML(){
   var topbar = '<div class="topbar">'+
     '<div class="topbar-left">'+
       '<span class="topbar-title">'+esc(tabLabel)+'</span>'+
-      selSnap+
+      periodBadge+
       (S.refreshing?'<span style="font-size:11px;color:var(--muted)">Sincronizando...</span>':'')+
     '</div>'+
     '<div class="topbar-right">'+
