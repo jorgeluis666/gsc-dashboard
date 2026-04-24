@@ -1552,17 +1552,20 @@ function buildHTML(){
     } else {
       var pBlog = paretoSplit(blogPages, function(r){ return pN(r.Clics); });
       content += paretoBadge(pBlog.count, blogPages.length);
-      var colsBlog = 6 + (prev ? 3 : 0); // +lupa +Δclics +Δimpr +Δpos
+      var colsBlog = 7 + (prev ? 3 : 0); // +lupa +Δclics +Δimpr +Δpos +action
       var blogRowsHtml = '';
       blogPages.forEach(function(r, i){
         var url   = r['Páginas principales'] || '';
+        var safeUrl = url.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
         var pos   = pP(r['Posición']);
         var clics = pN(r.Clics);
         var impr  = pN(r.Impresiones);
         var focused = S.overviewFocusUrl === url;
         var deltaHtml = '';
+        var dClicsVal = null;
         if(prev){
           var pr = prevPages2.find(function(x){ return (x['Páginas principales']||'')===url; });
+          if (pr) dClicsVal = clics - pN(pr.Clics);
           function dCell(val, prev_val, fmt, inv) {
             if(!pr) return '<td class="r gray">—</td>';
             var d = val - prev_val;
@@ -1574,6 +1577,10 @@ function buildHTML(){
                       dCell(impr,  pr?pN(pr.Impresiones):0, fmtK) +
                       dCell(pos,   pr?pP(pr['Posición']):0, function(v){return v.toFixed(1);}, true);
         }
+        var action = (dClicsVal !== null && dClicsVal < 0) ? 'optimizar' : 'promocionar';
+        var actionHtml = action === 'optimizar'
+          ? '<td><button onclick="optimizarPagina(\''+safeUrl+'\')" style="font-size:10px;padding:3px 8px;background:#DC2626;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Optimizar</button></td>'
+          : '<td><button onclick="promoverPagina(\''+safeUrl+'\')" style="font-size:10px;padding:3px 8px;background:#059669;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Promocionar</button></td>';
         blogRowsHtml+='<tr'+(focused?' style="background:#eff6ff"':'')+'>'+
           '<td style="width:28px;text-align:center;padding:4px">'+lupaBtnHTML(url)+'</td>'+
           '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(shortURL(url))+'</td>'+
@@ -1582,6 +1589,7 @@ function buildHTML(){
           '<td class="r">'+r.CTR+'</td>'+
           '<td class="r"><span class="'+posColor(pos)+'">'+pos.toFixed(1)+'</span><span class="pill '+posClass(pos)+'">'+posLbl(pos)+'</span></td>'+
           deltaHtml+
+          actionHtml+
         '</tr>';
         if(i===pBlog.count-1 && pBlog.count<blogPages.length) blogRowsHtml+=paretoSepRow(colsBlog, blogPages.length-pBlog.count);
       });
@@ -1594,6 +1602,7 @@ function buildHTML(){
         '<th class="r">CTR</th>'+
         '<th class="r">Posición</th>'+
         (prev?'<th class="r">Δ clics</th><th class="r">Δ impr.</th><th class="r">Δ pos</th>':'')+
+        '<th></th>'+
       '</tr></thead><tbody>'+blogRowsHtml+'</tbody></table></div>';
       content+='<p style="font-size:10px;color:#aaa;margin-top:6px">'+blogPages.length+' artículos detectados (URLs con 2+ segmentos de ruta)</p>';
     }
@@ -1712,16 +1721,19 @@ function buildHTML(){
     var prevPagesNAP = prev ? ((prev&&prev.data?prev.data.paginas:[])||[]) : [];
     var pNAP = paretoSplit(nonArticlePages, function(r){ return pN(r.Clics); });
     if(pNAP.count>0 && nonArticlePages.length>0) content += paretoBadge(pNAP.count, nonArticlePages.length);
-    var colsNAP = 6 + (prev ? 3 : 0);
+    var colsNAP = 7 + (prev ? 3 : 0);
     var napRows = '';
     nonArticlePages.forEach(function(r,i){
       var url=r['Páginas principales']||''; var svc=isSvc(url); var pos=pP(r['Posición']);
+      var safeUrl = url.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
       var clics=pN(r.Clics); var impr=pN(r.Impresiones);
       var focused = S.overviewFocusUrl === url;
       var rowBg = focused ? '#eff6ff' : (svc ? 'rgba(216,90,48,0.04)' : 'transparent');
       var napDelta = '';
+      var dClicsNAP = null;
       if(prev){
         var pr2 = prevPagesNAP.find(function(x){ return (x['Páginas principales']||'')===url; });
+        if (pr2) dClicsNAP = clics - pN(pr2.Clics);
         function dCellNAP(val, pval, fmt, inv) {
           if(!pr2) return '<td class="r gray">—</td>';
           var d=val-pval; var good=inv?d<0:d>0;
@@ -1732,16 +1744,21 @@ function buildHTML(){
                    dCellNAP(impr,  pr2?pN(pr2.Impresiones):0, fmtK) +
                    dCellNAP(pos,   pr2?pP(pr2['Posición']):0, function(v){return v.toFixed(1);}, true);
       }
+      var actionNAP = (dClicsNAP !== null && dClicsNAP < 0) ? 'optimizar' : 'promocionar';
+      var actionHtmlNAP = actionNAP === 'optimizar'
+        ? '<td><button onclick="optimizarPagina(\''+safeUrl+'\')" style="font-size:10px;padding:3px 8px;background:#DC2626;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Optimizar</button></td>'
+        : '<td><button onclick="promoverPagina(\''+safeUrl+'\')" style="font-size:10px;padding:3px 8px;background:#059669;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Promocionar</button></td>';
       napRows+='<tr style="background:'+rowBg+'">'+
         '<td style="width:28px;text-align:center;padding:4px">'+lupaBtnHTML(url)+'</td>'+
         '<td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(svc?'<span class="dot dot-red"></span>':'')+esc(shortURL(url))+'</td>'+
         '<td class="r">'+Math.round(clics).toLocaleString()+'</td><td class="r">'+fmtK(impr)+'</td><td class="r">'+r.CTR+'</td>'+
         '<td class="r"><span class="'+posColor(pos)+'">'+pos.toFixed(1)+'</span><span class="pill '+posClass(pos)+'">'+posLbl(pos)+'</span></td>'+
-        napDelta+'</tr>';
+        napDelta+actionHtmlNAP+'</tr>';
       if(i===pNAP.count-1 && pNAP.count<nonArticlePages.length) napRows+=paretoSepRow(colsNAP, nonArticlePages.length-pNAP.count);
     });
     content+='<div class="panel-table"><table><thead><tr><th style="width:28px"></th><th>URL</th><th class="r">Clics</th><th class="r">Impr.</th><th class="r">CTR</th><th class="r">Posición</th>'+
       (prev?'<th class="r">Δ clics</th><th class="r">Δ impr.</th><th class="r">Δ pos</th>':'')+
+      '<th></th>'+
       '</tr></thead><tbody>'+napRows+'</tbody></table></div>';
     content+='<p style="font-size:10px;color:#aaa;margin-top:6px"><span class="dot dot-red"></span>páginas de servicio</p>';
   }
