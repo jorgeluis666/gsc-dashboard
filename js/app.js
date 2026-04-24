@@ -136,6 +136,20 @@ function calcM(snap){
   return{clics:tc,impr:ti,ctr:ti>0?(tc/ti*100):0,pos:avgPos};
 }
 
+function calcMRange(snaps) {
+  if (!snaps || !snaps.length) return null;
+  var tc = 0, ti = 0, posSum = 0, posCnt = 0;
+  snaps.forEach(function(snap) {
+    var g = snap && snap.data ? snap.data.grafico || [] : [];
+    g.forEach(function(r) {
+      tc += pN(r.Clics); ti += pN(r.Impresiones);
+      var pos = pP(r['Posición']); if (pos > 0) { posSum += pos; posCnt++; }
+    });
+  });
+  if (!tc && !ti) return null;
+  return { clics: tc, impr: ti, ctr: ti > 0 ? (tc/ti*100) : 0, pos: posCnt ? posSum/posCnt : 0 };
+}
+
 function aggregateByWeek(rows) {
   if (!rows || !rows.length) return [];
   var buckets = {};
@@ -573,7 +587,7 @@ function applyDateFilter() {
     S.compareEnabled = true;
     S.showDateModal  = false;
     saveState();
-    if (S.gscStatus === 'connected' && S.gscSiteUrl) fetchGSCCompareData();
+    if (S.accessToken && S.gscSiteUrl) fetchGSCCompareData();
     else render();
     return;
   }
@@ -589,7 +603,7 @@ function applyDateFilter() {
   S.showDateModal   = false;
   S.gscCompareData  = null;
   saveState();
-  if (S.gscStatus === 'connected' && S.gscSiteUrl) fetchGSCData();
+  if (S.accessToken && S.gscSiteUrl) fetchGSCData();
   else render();
 }
 
@@ -598,7 +612,7 @@ function setOverviewRange(r) {
   S.gscData        = null;
   S.gscCompareData = null;
   saveState();
-  if (S.gscStatus === 'connected' && S.gscSiteUrl) fetchGSCData();
+  if (S.accessToken && S.gscSiteUrl) fetchGSCData();
   else render();
 }
 
@@ -1045,8 +1059,32 @@ function buildHTML(){
     return '<div class="shell">'+sidebar+'<main class="main">'+topbar+'<div class="content">'+content+'</div></main></div>';
   }
 
-  var curM = calcM(cur) || { clics: 0, impr: 0, ctr: 0, pos: 0 };
-  var prevM = prev ? calcM(prev) : null;
+  var curM = usingDirect
+    ? (calcM(cur) || { clics: 0, impr: 0, ctr: 0, pos: 0 })
+    : (calcMRange(filteredSnaps()) || { clics: 0, impr: 0, ctr: 0, pos: 0 });
+  var prevM = usingDirect
+    ? (prev ? calcM(prev) : null)
+    : (S.compareEnabled && compareSnaps().length ? calcMRange(compareSnaps())
+       : (S.curIdx > 0 ? calcM(S.snapshots[S.curIdx-1]) : null));
+
+  // ── SHARED: date filter bar ───────────────────────────────
+  var activeRangeLbl = S.overviewRange === 'custom' && S.overviewDateFrom && S.overviewDateTo
+    ? S.overviewDateFrom.slice(5).replace('-','/') + ' – ' + S.overviewDateTo.slice(5).replace('-','/')
+    : (RANGE_LABELS[S.overviewRange] || 'Últimos 3 meses').replace('Últimos ','');
+  var compareLblMap = { previous:'Período anterior', year:'Año anterior', custom:'Personalizado' };
+  var compareBadge = S.compareEnabled
+    ? '<span style="font-size:11px;background:#EFF6FF;color:#1A73E8;border:1px solid #BFDBFE;border-radius:20px;padding:2px 9px;display:inline-flex;align-items:center;gap:6px">'+
+        'vs. '+(compareLblMap[S.compareRange]||'')+
+        '<button onclick="disableCompare()" style="background:none;border:none;cursor:pointer;color:#1A73E8;font-size:13px;line-height:1;padding:0">×</button>'+
+      '</span>'
+    : '';
+  var dateFilterBtn =
+    '<button class="date-range-btn" onclick="openDateModal()">'+
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'+
+      activeRangeLbl+
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>'+
+    '</button>';
+  var dateFilterBar = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'+dateFilterBtn+compareBadge+'</div>';
 
   // ── OVERVIEW ──
   if(S.tab==='overview'){
@@ -1193,25 +1231,10 @@ function buildHTML(){
       return '<button onclick="S.overviewSection=\''+key+'\';render()" style="font-size:11px;padding:4px 12px;border-radius:20px;border:1px solid '+bdr+';background:'+bg+';color:'+col+';cursor:pointer">'+label+'</button>';
     }
 
-    var activeRangeLbl = S.overviewRange === 'custom' && S.overviewDateFrom && S.overviewDateTo
-      ? S.overviewDateFrom.slice(5).replace('-','/') + ' – ' + S.overviewDateTo.slice(5).replace('-','/')
-      : (RANGE_LABELS[S.overviewRange] || 'Últimos 3 meses').replace('Últimos ','');
-    var compareLblMap = { previous:'Período anterior', year:'Año anterior', custom:'Personalizado' };
-    var compareBadge = S.compareEnabled
-      ? ' <span style="font-size:11px;background:#EFF6FF;color:#1A73E8;border:1px solid #BFDBFE;border-radius:20px;padding:2px 9px;display:inline-flex;align-items:center;gap:6px">'+
-          'vs. '+compareLblMap[S.compareRange]+
-          '<button onclick="disableCompare()" style="background:none;border:none;cursor:pointer;color:#1A73E8;font-size:13px;line-height:1;padding:0">×</button>'+
-        '</span>'
-      : '';
     content += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">';
     content += '<p class="sec-lbl" style="margin:0">Evolución por período</p>';
     content += '<div style="display:flex;align-items:center;gap:8px">'+
-      '<button class="date-range-btn" onclick="openDateModal()">'+
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'+
-        activeRangeLbl+
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>'+
-      '</button>'+
-      compareBadge+
+      dateFilterBtn+compareBadge+
       '<div style="width:1px;height:14px;background:#E2E8F0"></div>'+
       '<div style="display:flex;gap:6px">'+tabBtn('top','Top páginas')+tabBtn('gained','↑ Crecimiento')+tabBtn('lost','↓ Caídas')+'</div>'+
     '</div>';
@@ -1394,6 +1417,7 @@ function buildHTML(){
 
   // ── ARTÍCULOS BLOG ──
   if(S.tab==='seguimiento'){
+    content += dateFilterBar;
     var allPages  = (cur&&cur.data?cur.data.paginas:[]) || [];
     var blogPages = allPages.filter(function(r){ return isBlogArticle(r['Páginas principales']||''); })
                             .sort(function(a,b){ return pN(b.Clics)-pN(a.Clics); });
@@ -1404,28 +1428,34 @@ function buildHTML(){
     } else {
       var pBlog = paretoSplit(blogPages, function(r){ return pN(r.Clics); });
       content += paretoBadge(pBlog.count, blogPages.length);
-      var colsBlog = 5 + (prev?1:0);
+      var colsBlog = 5 + (prev ? 3 : 0); // +Δclics +Δimpr +Δpos
       var blogRowsHtml = '';
       blogPages.forEach(function(r, i){
-        var url  = r['Páginas principales'] || '';
-        var pos  = pP(r['Posición']);
+        var url   = r['Páginas principales'] || '';
+        var pos   = pP(r['Posición']);
         var clics = pN(r.Clics);
-        var dHtml = '';
+        var impr  = pN(r.Impresiones);
+        var deltaHtml = '';
         if(prev){
           var pr = prevPages2.find(function(x){ return (x['Páginas principales']||'')===url; });
-          var d  = pr ? clics - pN(pr.Clics) : null;
-          dHtml  = d===null ? '<td class="r gray">—</td>'
-                  : d>0  ? '<td class="r"><span class="up">↑'+Math.round(d)+'</span></td>'
-                  : d<0  ? '<td class="r"><span class="dn">↓'+Math.round(Math.abs(d))+'</span></td>'
-                  : '<td class="r gray">=</td>';
+          function dCell(val, prev_val, fmt, inv) {
+            if(!pr) return '<td class="r gray">—</td>';
+            var d = val - prev_val;
+            var good = inv ? d < 0 : d > 0;
+            if(Math.abs(d) < 0.05) return '<td class="r gray">=</td>';
+            return '<td class="r"><span class="'+(good?'up':'dn')+'">'+(d>0?'↑':'↓')+(fmt?fmt(Math.abs(d)):Math.round(Math.abs(d)).toLocaleString())+'</span></td>';
+          }
+          deltaHtml = dCell(clics, pr?pN(pr.Clics):0) +
+                      dCell(impr,  pr?pN(pr.Impresiones):0, fmtK) +
+                      dCell(pos,   pr?pP(pr['Posición']):0, function(v){return v.toFixed(1);}, true);
         }
         blogRowsHtml+='<tr>'+
-          '<td style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(shortURL(url))+'</td>'+
+          '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(shortURL(url))+'</td>'+
           '<td class="r">'+Math.round(clics).toLocaleString()+'</td>'+
-          '<td class="r">'+fmtK(pN(r.Impresiones))+'</td>'+
+          '<td class="r">'+fmtK(impr)+'</td>'+
           '<td class="r">'+r.CTR+'</td>'+
           '<td class="r"><span class="'+posColor(pos)+'">'+pos.toFixed(1)+'</span><span class="pill '+posClass(pos)+'">'+posLbl(pos)+'</span></td>'+
-          dHtml+
+          deltaHtml+
         '</tr>';
         if(i===pBlog.count-1 && pBlog.count<blogPages.length) blogRowsHtml+=paretoSepRow(colsBlog, blogPages.length-pBlog.count);
       });
@@ -1436,7 +1466,7 @@ function buildHTML(){
         '<th class="r">Impr.</th>'+
         '<th class="r">CTR</th>'+
         '<th class="r">Posición</th>'+
-        (prev?'<th class="r">Δ clics</th>':'')+
+        (prev?'<th class="r">Δ clics</th><th class="r">Δ impr.</th><th class="r">Δ pos</th>':'')+
       '</tr></thead><tbody>'+blogRowsHtml+'</tbody></table></div>';
       content+='<p style="font-size:10px;color:#aaa;margin-top:6px">'+blogPages.length+' artículos detectados (URLs con 2+ segmentos de ruta)</p>';
     }
@@ -1550,19 +1580,39 @@ function buildHTML(){
 
   // ── PÁGINAS ──
   if(S.tab==='páginas'){
+    content += dateFilterBar;
     var nonArticlePages=((cur&&cur.data?cur.data.paginas:[])||[]).filter(function(r){return!isBlogArticle(r['Páginas principales']||'');}).sort(function(a,b){return pN(b.Clics)-pN(a.Clics);});
+    var prevPagesNAP = prev ? ((prev&&prev.data?prev.data.paginas:[])||[]) : [];
     var pNAP = paretoSplit(nonArticlePages, function(r){ return pN(r.Clics); });
     if(pNAP.count>0 && nonArticlePages.length>0) content += paretoBadge(pNAP.count, nonArticlePages.length);
+    var colsNAP = 5 + (prev ? 3 : 0);
     var napRows = '';
     nonArticlePages.forEach(function(r,i){
-      var url=r['Páginas principales']||'';var svc=isSvc(url);var pos=pP(r['Posición']);
+      var url=r['Páginas principales']||''; var svc=isSvc(url); var pos=pP(r['Posición']);
+      var clics=pN(r.Clics); var impr=pN(r.Impresiones);
+      var napDelta = '';
+      if(prev){
+        var pr2 = prevPagesNAP.find(function(x){ return (x['Páginas principales']||'')===url; });
+        function dCellNAP(val, pval, fmt, inv) {
+          if(!pr2) return '<td class="r gray">—</td>';
+          var d=val-pval; var good=inv?d<0:d>0;
+          if(Math.abs(d)<0.05) return '<td class="r gray">=</td>';
+          return '<td class="r"><span class="'+(good?'up':'dn')+'">'+(d>0?'↑':'↓')+(fmt?fmt(Math.abs(d)):Math.round(Math.abs(d)).toLocaleString())+'</span></td>';
+        }
+        napDelta = dCellNAP(clics, pr2?pN(pr2.Clics):0) +
+                   dCellNAP(impr,  pr2?pN(pr2.Impresiones):0, fmtK) +
+                   dCellNAP(pos,   pr2?pP(pr2['Posición']):0, function(v){return v.toFixed(1);}, true);
+      }
       napRows+='<tr style="background:'+(svc?'rgba(216,90,48,0.04)':'transparent')+'">'+
         '<td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(svc?'<span class="dot dot-red"></span>':'')+esc(shortURL(url))+'</td>'+
-        '<td class="r">'+r.Clics+'</td><td class="r">'+r.Impresiones+'</td><td class="r">'+r.CTR+'</td>'+
-        '<td class="r"><span class="'+posColor(pos)+'">'+pos.toFixed(1)+'</span><span class="pill '+posClass(pos)+'">'+posLbl(pos)+'</span></td></tr>';
-      if(i===pNAP.count-1 && pNAP.count<nonArticlePages.length) napRows+=paretoSepRow(5, nonArticlePages.length-pNAP.count);
+        '<td class="r">'+Math.round(clics).toLocaleString()+'</td><td class="r">'+fmtK(impr)+'</td><td class="r">'+r.CTR+'</td>'+
+        '<td class="r"><span class="'+posColor(pos)+'">'+pos.toFixed(1)+'</span><span class="pill '+posClass(pos)+'">'+posLbl(pos)+'</span></td>'+
+        napDelta+'</tr>';
+      if(i===pNAP.count-1 && pNAP.count<nonArticlePages.length) napRows+=paretoSepRow(colsNAP, nonArticlePages.length-pNAP.count);
     });
-    content+='<div class="panel-table"><table><thead><tr><th>URL</th><th class="r">Clics</th><th class="r">Impr.</th><th class="r">CTR</th><th class="r">Posición</th></tr></thead><tbody>'+napRows+'</tbody></table></div>';
+    content+='<div class="panel-table"><table><thead><tr><th>URL</th><th class="r">Clics</th><th class="r">Impr.</th><th class="r">CTR</th><th class="r">Posición</th>'+
+      (prev?'<th class="r">Δ clics</th><th class="r">Δ impr.</th><th class="r">Δ pos</th>':'')+
+      '</tr></thead><tbody>'+napRows+'</tbody></table></div>';
     content+='<p style="font-size:10px;color:#aaa;margin-top:6px"><span class="dot dot-red"></span>páginas de servicio</p>';
   }
 
