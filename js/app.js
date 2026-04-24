@@ -77,6 +77,12 @@ function pN(v){return parseFloat(String(v||'0').replace(/[%\s]/g,'').replace(','
 function pP(v){return parseFloat(String(v||'0').replace(',','.'))||0;}
 function isPaid(q){var ql=(q||'').toLowerCase();return PAID.some(function(p){return ql.includes(p);});}
 function isSvc(url){var ul=(url||'').toLowerCase();return SVCS.some(function(s){return ul.includes(s);});}
+function isBlogArticle(url){
+  if(isSvc(url)) return false;
+  var path=(url||'').replace(/^https?:\/\/[^/]+/,'').replace(/\/$/,'');
+  var parts=path.split('/').filter(function(p){return p.length>0;});
+  return parts.length>=2;
+}
 function shortURL(u){return(u||'').replace('https://limaretail.com','').split('#')[0]||'/';}
 function fmtK(v){return v>=1000?(v/1000).toFixed(1)+'k':Math.round(v)+'';}
 function posClass(p){return p<=10?'pg1':p<=20?'pg2':'pg3';}
@@ -1091,104 +1097,50 @@ function buildHTML(){
     }
   }
 
-  // ── SEGUIMIENTO ──
+  // ── ARTÍCULOS BLOG ──
   if(S.tab==='seguimiento'){
-    if(S.trackedURLs.length===0){
-      S.trackedURLs.push({
-        url:'https://limaretail.com/performance/07-herramientas-medir-velocidad-pagina-web/',
-        label:'07 Herramientas medir velocidad página web',
-        dateAdded:'2026-04-12',
-        notes:[]
-      });
-      saveState();
-    }
+    var allPages  = cur.data.paginas || [];
+    var blogPages = allPages.filter(function(r){ return isBlogArticle(r['Páginas principales']||''); })
+                            .sort(function(a,b){ return pN(b.Clics)-pN(a.Clics); });
+    var prevPages2 = prev ? (prev.data.paginas || []) : [];
 
-    content+='<div class="add-track-form">'+
-      '<p class="sec-lbl" style="margin-top:0">Agregar URL al seguimiento</p>'+
-      '<div class="form-row">'+
-      '<div><label style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px">URL completa</label>'+
-      '<input id="new-track-url" placeholder="https://limaretail.com/..." style="width:100%"></div>'+
-      '<div><label style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px">Fecha de envío a GSC</label>'+
-      '<input type="date" id="new-track-date" value="'+new Date().toISOString().slice(0,10)+'" style="width:100%"></div>'+
-      '</div>'+
-      '<div style="display:flex;gap:8px">'+
-      '<button class="primary" onclick="(function(){var u=document.getElementById(\'new-track-url\');if(u)addTrackedURL(u.value,\'\')})()">+ Agregar URL</button>'+
-      '</div></div>';
-
-    if(!S.trackedURLs.length){
-      content+='<div class="insight info">No hay URLs en seguimiento. Agrega una arriba.</div>';
+    if(!blogPages.length){
+      content+='<div class="insight info">No hay artículos de blog en este período.</div>';
     } else {
-      S.trackedURLs.forEach(function(tracked, urlIdx){
-        var history = getURLHistory(tracked.url);
-        var slug    = tracked.url.replace('https://limaretail.com','');
-        var added   = tracked.dateAdded ? tracked.dateAdded.slice(0,10) : '—';
-        var weeksTracked = history.filter(function(h){ return h.found; }).length;
+      content+='<div class="panel-table"><table><thead><tr>'+
+        '<th>Artículo</th>'+
+        '<th class="r">Clics</th>'+
+        '<th class="r">Impr.</th>'+
+        '<th class="r">CTR</th>'+
+        '<th class="r">Posición</th>'+
+        (prev?'<th class="r">Δ clics</th>':'')+
+      '</tr></thead><tbody>';
 
-        content+='<div class="track-url-card">'+
-          '<div class="track-url-header">'+
-          '<div>'+
-          '<div class="track-url-slug">'+esc(slug)+'</div>'+
-          '<div class="track-url-meta">Enviado a GSC: '+esc(added)+
-            (weeksTracked ? ' · <span style="color:var(--green)">'+weeksTracked+' período'+(weeksTracked>1?'s':'')+' con datos</span>' : ' · <span style="color:var(--red)">Sin datos aún en snapshots</span>')+
-            (tracked.lastIndexed ? ' · <span style="color:#7c3aed">↑ Indexado: '+esc(tracked.lastIndexed)+'</span>' : '')+
-          '</div>'+
-          '</div>'+
-          '<div style="display:flex;gap:6px">'+
-          '<button style="font-size:11px;padding:4px 10px;background:#7c3aed;color:#fff;border:none;border-radius:4px;cursor:pointer" onclick="indexURL('+urlIdx+')">↑ Indexar</button>'+
-          '<button class="danger" style="font-size:11px" onclick="removeTrackedURL('+urlIdx+')">Quitar</button>'+
-          '</div>'+
-          '</div>';
-
-        if(history.length){
-          // Cards grid
-          content+='<div class="track-progress">';
-          history.forEach(function(h){
-            var cls = h.found ? (h.pos && h.pos<=10 ? 'track-week p1' : 'track-week has-data') : 'track-week';
-            var posStr   = h.found && h.pos   ? h.pos.toFixed(1)  : '—';
-            var clicsStr = h.found && h.clics !== null ? Math.round(h.clics) : '—';
-            var imprStr  = h.found && h.impr  !== null ? fmtK(h.impr) : '—';
-            content+='<div class="'+cls+'">'+
-              '<div class="track-week-lbl">'+esc(h.label)+'</div>'+
-              '<div class="track-week-val">pos '+posStr+'</div>'+
-              '<div class="track-week-sub">'+clicsStr+' clics · '+imprStr+' impr.</div>'+
-              '</div>';
-          });
-          content+='</div>';
-
-          // Line chart (only when ≥2 snapshots have data)
-          var withData = history.filter(function(h){ return h.found; });
-          if(withData.length >= 2) {
-            var uLabels = history.map(function(h){ return h.label; });
-            var uTrend = buildURLTrend(tracked.url);
-            content += '<div style="margin-top:10px">';
-            content += svgLineChart(uLabels, [
-              { label:'Clics',    values: uTrend.map(function(d){ return d.clics; }), color:'#E85249' },
-              { label:'Impr.',    values: uTrend.map(function(d){ return d.impr;  }), color:'#059669', dashed:true },
-              { label:'Posición', values: uTrend.map(function(d){ return d.pos;   }), color:'#DC2626', yRight:true }
-            ], { height:170, invertRight:true });
-            content += '<p style="font-size:10px;color:#aaa;margin-top:2px">Posición: eje derecho — más bajo = mejor</p>';
-            content += '</div>';
-          }
-        } else {
-          content+='<div class="insight info" style="margin-top:8px;font-size:11px">Carga snapshots para ver la evolución de esta URL.</div>';
+      blogPages.forEach(function(r){
+        var url  = r['Páginas principales'] || '';
+        var pos  = pP(r['Posición']);
+        var clics = pN(r.Clics);
+        var dHtml = '';
+        if(prev){
+          var pr = prevPages2.find(function(x){ return (x['Páginas principales']||'')===url; });
+          var d  = pr ? clics - pN(pr.Clics) : null;
+          dHtml  = d===null ? '<td class="r gray">—</td>'
+                  : d>0  ? '<td class="r"><span class="up">↑'+Math.round(d)+'</span></td>'
+                  : d<0  ? '<td class="r"><span class="dn">↓'+Math.round(Math.abs(d))+'</span></td>'
+                  : '<td class="r gray">=</td>';
         }
-
-        if(tracked.notes && tracked.notes.length){
-          content+='<div style="margin-top:8px">';
-          tracked.notes.forEach(function(n){
-            content+='<div class="track-note">📝 <b>'+esc(n.date)+'</b> — '+esc(n.text)+'</div>';
-          });
-          content+='</div>';
-        }
-
-        content+='<div style="display:flex;gap:6px;margin-top:10px">'+
-          '<input class="note-input" data-idx="'+urlIdx+'" placeholder="Ej: Actualicé el H1 y agregué datos 2026" style="flex:1;font-size:11px">'+
-          '<input type="date" class="note-date" data-idx="'+urlIdx+'" value="'+new Date().toISOString().slice(0,10)+'" style="width:130px;font-size:11px">'+
-          '<button class="note-btn" data-idx="'+urlIdx+'" style="font-size:11px">+ Nota</button>'+
-          '</div>';
-
-        content+='</div>';
+        content+='<tr>'+
+          '<td style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(shortURL(url))+'</td>'+
+          '<td class="r">'+Math.round(clics).toLocaleString()+'</td>'+
+          '<td class="r">'+fmtK(pN(r.Impresiones))+'</td>'+
+          '<td class="r">'+r.CTR+'</td>'+
+          '<td class="r"><span class="'+posColor(pos)+'">'+pos.toFixed(1)+'</span><span class="pill '+posClass(pos)+'">'+posLbl(pos)+'</span></td>'+
+          dHtml+
+        '</tr>';
       });
+
+      content+='</tbody></table></div>';
+      content+='<p style="font-size:10px;color:#aaa;margin-top:6px">'+blogPages.length+' artículos detectados (URLs con 2+ segmentos de ruta)</p>';
     }
   }
 
@@ -1300,8 +1252,9 @@ function buildHTML(){
 
   // ── PÁGINAS ──
   if(S.tab==='páginas'){
+    var nonArticlePages=(cur.data.paginas||[]).filter(function(r){return!isBlogArticle(r['Páginas principales']||'');}).sort(function(a,b){return pN(b.Clics)-pN(a.Clics);});
     content+='<div class="panel-table"><table><thead><tr><th>URL</th><th class="r">Clics</th><th class="r">Impr.</th><th class="r">CTR</th><th class="r">Posición</th></tr></thead><tbody>'+
-      (cur.data.paginas||[]).slice(0,25).map(function(r){var url=r['Páginas principales']||'';var svc=isSvc(url);var pos=pP(r['Posición']);return'<tr style="background:'+(svc?'rgba(216,90,48,0.04)':'transparent')+'"><td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(svc?'<span class="dot dot-red"></span>':'')+esc(shortURL(url))+'</td><td class="r">'+r.Clics+'</td><td class="r">'+r.Impresiones+'</td><td class="r">'+r.CTR+'</td><td class="r"><span class="'+posColor(pos)+'">'+pos.toFixed(1)+'</span><span class="pill '+posClass(pos)+'">'+posLbl(pos)+'</span></td></tr>';}).join('')+
+      nonArticlePages.map(function(r){var url=r['Páginas principales']||'';var svc=isSvc(url);var pos=pP(r['Posición']);return'<tr style="background:'+(svc?'rgba(216,90,48,0.04)':'transparent')+'"><td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(svc?'<span class="dot dot-red"></span>':'')+esc(shortURL(url))+'</td><td class="r">'+r.Clics+'</td><td class="r">'+r.Impresiones+'</td><td class="r">'+r.CTR+'</td><td class="r"><span class="'+posColor(pos)+'">'+pos.toFixed(1)+'</span><span class="pill '+posClass(pos)+'">'+posLbl(pos)+'</span></td></tr>';}).join('')+
       '</tbody></table></div>';
     content+='<p style="font-size:10px;color:#aaa;margin-top:6px"><span class="dot dot-red"></span>páginas de servicio</p>';
   }
