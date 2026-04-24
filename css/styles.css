@@ -16,7 +16,7 @@
   --text:          #0F172A;
   --text-2:        #475569;
   --muted:         #94A3B8;
-  --font: -apple-system,BlinkMacSystemFont,"Segoe UI","Inter",Helvetica,sans-serif;
+  --font: "Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,sans-serif;
   --r-lg:14px; --r:12px; --r-sm:8px; --r-xs:6px;
   --sh:  0 1px 3px rgba(15,23,42,.06);
   --sh2: 0 4px 14px rgba(15,23,42,.08);
@@ -38,7 +38,7 @@ button,input,select,textarea{font-family:inherit}
 /* Sidebar */
 .sidebar{width:220px;min-width:220px;background:var(--sidebar-bg);color:var(--sidebar-text);display:flex;flex-direction:column;position:sticky;top:0;max-height:100vh;overflow-y:auto}
 .s-brand{height:57px;padding:0 20px;border-bottom:1px solid var(--border);margin-bottom:6px;flex-shrink:0;background:#fff;display:flex;align-items:center;box-shadow:0 1px 3px rgba(15,23,42,.06)}
-.s-title{font-size:15px;font-weight:700;color:var(--text);letter-spacing:-.02em;white-space:nowrap;line-height:1.2}
+.s-title{font-size:16px;font-weight:600;color:#0F172A;letter-spacing:-.03em;white-space:nowrap;line-height:1;font-family:"Inter",sans-serif}
 .s-title b{color:var(--brand);font-weight:700}
 .s-sub{display:none}
 .s-group-lbl{font-size:10.5px;text-transform:uppercase;color:var(--sidebar-muted);letter-spacing:.07em;padding:12px 20px 4px;font-weight:600}
@@ -56,8 +56,9 @@ button,input,select,textarea{font-family:inherit}
 
 /* Topbar */
 .topbar{padding:0 28px;height:57px;background:#fff;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:16px;flex-shrink:0;position:sticky;top:0;z-index:10;box-shadow:0 1px 3px rgba(15,23,42,.06)}
-.topbar-left{display:flex;align-items:center;gap:12px;min-width:0}
-.topbar-title{font-size:13px;font-weight:600;color:var(--text-2);letter-spacing:-.01em;white-space:nowrap}
+.topbar-left{display:flex;align-items:center;gap:10px;min-width:0}
+.topbar-sep{font-size:20px;font-weight:300;color:#CBD5E1;line-height:1;flex-shrink:0;margin:0 2px}
+.topbar-title{font-size:15px;font-weight:500;color:#475569;letter-spacing:-.02em;white-space:nowrap;font-family:"Inter",sans-serif}
 .topbar-right{display:flex;gap:8px;align-items:center;flex-shrink:0}
 
 /* Content area */
