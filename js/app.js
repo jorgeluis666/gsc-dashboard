@@ -1152,71 +1152,94 @@ function buildHTML(){
     '</div>';
 
     var pages = (cur && cur.data ? cur.data.paginas : []) || [];
-    var topClics = pages.slice().sort(function(a,b){return pN(b.Clics)-pN(a.Clics);}).slice(0,8);
     var prevPages = prev && prev.data ? ((prev&&prev.data?prev.data.paginas:[]) || []) : [];
-
     function findPrev(url){ return prevPages.find(function(r){return(r['Páginas principales']||'')===url;})||null; }
-
-    var withDelta = pages.map(function(r){
-      var url=r['Páginas principales']||'';
-      var pr=findPrev(url);
+    function enrichRow(r){
+      var url = r['Páginas principales']||'';
+      var pr  = findPrev(url);
       return {
         url: url,
         clics: pN(r.Clics),
         impr:  pN(r.Impresiones),
+        ctr:   r.CTR,
+        pos:   pP(r['Posición']),
         dClics: pr ? pN(r.Clics)-pN(pr.Clics) : null,
-        dImpr:  pr ? pN(r.Impresiones)-pN(pr.Impresiones) : null
+        dImpr:  pr ? pN(r.Impresiones)-pN(pr.Impresiones) : null,
+        dPos:   pr ? pP(r['Posición'])-pP(pr['Posición']) : null
       };
-    }).filter(function(r){ return r.dClics !== null; });
-
+    }
+    var enriched = pages.map(enrichRow);
+    var topClics = enriched.slice().sort(function(a,b){return b.clics-a.clics;}).slice(0,8);
+    var withDelta = enriched.filter(function(r){ return r.dClics !== null; });
     var topGainClics = withDelta.filter(function(r){return r.dClics>0;}).sort(function(a,b){return b.dClics-a.dClics;}).slice(0,8);
     var topGainImpr  = withDelta.filter(function(r){return r.dImpr>0;}).sort(function(a,b){return b.dImpr-a.dImpr;}).slice(0,8);
     var topDropClics = withDelta.filter(function(r){return r.dClics<0;}).sort(function(a,b){return a.dClics-b.dClics;}).slice(0,8);
     var topDropImpr  = withDelta.filter(function(r){return r.dImpr<0;}).sort(function(a,b){return a.dImpr-b.dImpr;}).slice(0,8);
 
-    function pageRow(r, showDelta, deltaKey, actionType){
-      var url = r.url || r['Páginas principales'] || '';
-      var clics = r.clics !== undefined ? r.clics : pN(r.Clics);
-      var impr  = r.impr  !== undefined ? r.impr  : pN(r.Impresiones);
-      var dVal  = r[deltaKey];
-      var dHtml = '';
-      if(dVal !== undefined && dVal !== null){
-        dHtml = dVal > 0
-          ? '<span class="up">↑ '+Math.round(dVal).toLocaleString()+'</span>'
-          : '<span class="dn">↓ '+Math.round(Math.abs(dVal)).toLocaleString()+'</span>';
-      }
+    function dCellHTML(val, fmt, inv){
+      if (val === null || val === undefined) return '<td class="r gray">—</td>';
+      if (Math.abs(val) < 0.05) return '<td class="r gray">=</td>';
+      var good = inv ? val < 0 : val > 0;
+      var magnitude = fmt ? fmt(Math.abs(val)) : Math.round(Math.abs(val)).toLocaleString();
+      return '<td class="r"><span class="'+(good?'up':'dn')+'">'+(val>0?'↑':'↓')+magnitude+'</span></td>';
+    }
+    function pageRow(r, showDeltas, actionType){
+      var url = r.url;
       var safeUrl = url.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
       var focused = S.overviewFocusUrl === url;
+      var deltas = showDeltas
+        ? dCellHTML(r.dClics) + dCellHTML(r.dImpr, fmtK) + dCellHTML(r.dPos, function(v){return v.toFixed(1);}, true)
+        : '';
       var actionHtml = '';
       if(actionType==='optimizar'){
         actionHtml='<td><button onclick="optimizarPagina(\''+safeUrl+'\')" style="font-size:10px;padding:3px 8px;background:#DC2626;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Optimizar</button></td>';
       } else if(actionType==='promocionar'){
         actionHtml='<td><button onclick="promoverPagina(\''+safeUrl+'\')" style="font-size:10px;padding:3px 8px;background:#059669;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Promocionar</button></td>';
       }
-      return '<tr'+( focused?' style="background:#eff6ff"':'')+'>'+
+      return '<tr'+(focused?' style="background:#eff6ff"':'')+'>'+
         '<td style="width:28px;text-align:center;padding:4px">'+lupaBtnHTML(url)+'</td>'+
-        '<td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(shortURL(url))+'</td>'+
-        '<td class="r">'+Math.round(clics).toLocaleString()+'</td>'+
-        '<td class="r">'+fmtK(impr)+'</td>'+
-        (showDelta ? '<td class="r">'+dHtml+'</td>' : '')+
+        '<td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(shortURL(url))+'</td>'+
+        '<td class="r">'+Math.round(r.clics).toLocaleString()+'</td>'+
+        '<td class="r">'+fmtK(r.impr)+'</td>'+
+        '<td class="r">'+r.ctr+'</td>'+
+        '<td class="r"><span class="'+posColor(r.pos)+'">'+r.pos.toFixed(1)+'</span><span class="pill '+posClass(r.pos)+'">'+posLbl(r.pos)+'</span></td>'+
+        deltas+
         actionHtml+'</tr>';
     }
-
-    function pageTable(rows, showDelta, deltaKey, actionType, paretoIdx){
+    function pageTable(rows, showDeltas, actionType, paretoIdx){
       if(!rows.length) return '<div class="insight info" style="margin-top:8px">No hay datos para este período.</div>';
-      var extraTh = showDelta ? '<th class="r">Δ clics</th>' : '';
+      var deltaTh = showDeltas ? '<th class="r">Δ clics</th><th class="r">Δ impr.</th><th class="r">Δ pos</th>' : '';
       var actionTh = actionType ? '<th></th>' : '';
-      var colCount = 4 + (showDelta?1:0) + (actionType?1:0);
+      var colCount = 6 + (showDeltas?3:0) + (actionType?1:0);
       var rowHtml = '';
       rows.forEach(function(r, i) {
-        rowHtml += pageRow(r, showDelta, deltaKey, actionType);
+        rowHtml += pageRow(r, showDeltas, actionType);
         if (paretoIdx && i === paretoIdx - 1 && paretoIdx < rows.length) {
           rowHtml += paretoSepRow(colCount, rows.length - paretoIdx);
         }
       });
       return '<div class="panel-table" style="margin-top:8px"><table>'+
-        '<thead><tr><th style="width:28px"></th><th>Página</th><th class="r">Clics</th><th class="r">Impr.</th>'+extraTh+actionTh+'</tr></thead>'+
+        '<thead><tr><th style="width:28px"></th><th>Página</th><th class="r">Clics</th><th class="r">Impr.</th><th class="r">CTR</th><th class="r">Posición</th>'+deltaTh+actionTh+'</tr></thead>'+
         '<tbody>'+rowHtml+'</tbody></table></div>';
+    }
+
+    // Horizontal bar chart — per-URL Δ clicks (used for Crecimiento / Caídas)
+    function deltaBarChart(rows, color, label){
+      if (!rows.length) return '<p style="font-size:11px;color:#94A3B8;padding:20px 0;text-align:center">Sin páginas que '+label+' en este período.</p>';
+      var maxAbs = Math.max.apply(null, rows.map(function(r){ return Math.abs(r.dClics); }));
+      if (!maxAbs) maxAbs = 1;
+      return '<div style="padding:6px 0">' + rows.map(function(r){
+        var v = Math.abs(r.dClics);
+        var w = (v / maxAbs * 100);
+        var sign = r.dClics >= 0 ? '+' : '−';
+        return '<div style="display:flex;align-items:center;gap:10px;margin:5px 0">'+
+          '<div style="flex:0 0 260px;font-size:11px;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(r.url)+'">'+esc(shortURL(r.url))+'</div>'+
+          '<div style="flex:1;background:#F1F5F9;border-radius:3px;height:18px;position:relative;min-width:60px">'+
+            '<div style="background:'+color+';height:100%;border-radius:3px;width:'+w.toFixed(1)+'%;transition:width .25s"></div>'+
+          '</div>'+
+          '<div style="flex:0 0 80px;font-size:11px;font-weight:700;color:'+color+';text-align:right">'+sign+Math.round(v).toLocaleString()+' clics</div>'+
+        '</div>';
+      }).join('') + '</div>';
     }
 
     var ovSec = S.overviewSection || 'top';
@@ -1265,12 +1288,12 @@ function buildHTML(){
       prev ? topDropClics.length+' páginas perdieron clics vs '+prevLabel : 'Activa comparación de período para ver caídas');
     content += '</div>';
 
-    // ── Trend chart (adapts to selected section) ──
+    // ── Chart (adapts to selected section) ──
     (function() {
       function padTo(arr, len) { var a=arr.slice(); while(a.length<len) a.unshift(null); return a; }
-      var chartLabels, chartSeries, chartFooter;
       var hasFocus = !!S.overviewFocusUrl;
 
+      // URL-focus mode (lupa pressed) — applies to any section
       if (hasFocus) {
         if (usingDirect && !S.overviewFocusData) {
           fetchURLFocus(S.overviewFocusUrl);
@@ -1280,76 +1303,124 @@ function buildHTML(){
         var focusRows = usingDirect ? aggregateByWeek(S.overviewFocusData || []) : [];
         var ut = usingDirect ? focusRows : buildURLTrend(S.overviewFocusUrl, filteredSnaps());
         if (!ut.length) return;
-        chartLabels = ut.map(function(d){ return d.label; });
-        chartSeries = [
+        var fLabels = ut.map(function(d){ return d.label; });
+        var fSeries = [
           { label:'Clics', values: ut.map(function(d){ return d.clics; }), color:'#E85249' },
           { label:'Impr.', values: ut.map(function(d){ return d.impr;  }), color:'#059669', dashed:true }
         ];
-        chartFooter = '<div style="display:flex;align-items:center;gap:10px;padding:4px 0 6px">'+
+        content += '<div class="panel" style="padding:1rem 1.2rem 0.6rem">';
+        if (fLabels.length >= 2) content += svgLineChart(fLabels, fSeries, { height:200 });
+        content += '<div style="display:flex;align-items:center;gap:10px;padding:4px 0 6px">'+
           '<span style="font-size:10px;color:#E85249;font-weight:600">'+esc(shortURL(S.overviewFocusUrl))+'</span>'+
           '<button onclick="S.overviewFocusUrl=null;S.overviewFocusData=null;render()" style="font-size:10px;padding:2px 8px;border:1px solid #ddd;border-radius:12px;background:transparent;cursor:pointer;color:#666">× Total sitio</button>'+
-          '</div>';
-      } else if (td.length < 2) {
+          '</div></div>';
         return;
-      } else if (ovSec === 'top') {
-        chartLabels = td.map(function(d){ return d.label; });
-        chartSeries = [
+      }
+
+      // ── Top páginas: site-wide trend ──
+      if (ovSec === 'top') {
+        if (td.length < 2) return;
+        var tLabels = td.map(function(d){ return d.label; });
+        var tSeries = [
           { label:'Clics',       values: td.map(function(d){ return d.clics; }), color:'#E85249' },
           { label:'Impresiones', values: td.map(function(d){ return d.impr;  }), color:'#059669', dashed:true },
           { label:'Posición',    values: td.map(function(d){ return d.pos;   }), color:'#94A3B8', yRight:true }
         ];
         if (ctd.length >= 1) {
-          var maxLen = Math.max(chartLabels.length, ctd.length);
-          chartLabels = padTo(td.map(function(d){ return d.label; }), maxLen);
-          chartSeries = [
+          var maxLen = Math.max(tLabels.length, ctd.length);
+          tLabels = padTo(td.map(function(d){ return d.label; }), maxLen);
+          tSeries = [
             { label:'Clics',        values: padTo(td.map(function(d){return d.clics;}),  maxLen), color:'#E85249' },
             { label:'Impresiones',  values: padTo(td.map(function(d){return d.impr;}),   maxLen), color:'#059669', dashed:true },
             { label:'Clics (ant.)', values: padTo(ctd.map(function(d){return d.clics;}), maxLen), color:'rgba(232,82,73,0.35)' },
             { label:'Impr. (ant.)', values: padTo(ctd.map(function(d){return d.impr;}),  maxLen), color:'rgba(5,150,105,0.35)', dashed:true }
           ];
         }
-        chartFooter = '<p style="font-size:10px;color:#aaa;padding:4px 0 6px">Posición: eje derecho — valores más bajos = mejor ranking</p>';
-      } else {
-        var mc = ovSec === 'gained' ? '#059669' : '#DC2626';
-        chartLabels = td.map(function(d){ return d.label; });
-        if (ctd.length >= 1) {
-          var maxLen2 = Math.max(td.length, ctd.length);
-          chartSeries = [
-            { label:'Clics (actual)',      values: padTo(td.map(function(d){return d.clics;}),  maxLen2), color: mc },
-            { label:'Clics (comparación)', values: padTo(ctd.map(function(d){return d.clics;}), maxLen2), color:'rgba(100,116,139,.5)', dashed:true }
-          ];
-          chartFooter = '<p style="font-size:10px;color:#aaa;padding:4px 0 6px">'+(ovSec==='gained'?'↑ Verde = período actual con más clics':'↓ Rojo = período actual con menos clics')+' vs comparación</p>';
-        } else {
-          chartSeries = [
-            { label:'Clics',       values: td.map(function(d){ return d.clics; }), color: mc },
-            { label:'Impresiones', values: td.map(function(d){ return d.impr;  }), color:'rgba(100,116,139,.5)', dashed:true }
-          ];
-          chartFooter = '<p style="font-size:10px;color:#94A3B8;padding:4px 0 6px">Activa comparación de período para ver variaciones frente al período anterior</p>';
-        }
+        content += '<div class="panel" style="padding:1rem 1.2rem 0.6rem">';
+        content += svgLineChart(tLabels, tSeries, { height:200, invertRight:true });
+        content += '<p style="font-size:10px;color:#aaa;padding:4px 0 6px">Posición: eje derecho — valores más bajos = mejor ranking</p>';
+        content += '</div>';
+        return;
       }
 
-      content += '<div class="panel" style="padding:1rem 1.2rem 0.6rem">';
-      if (chartLabels && chartLabels.length >= 2) content += svgLineChart(chartLabels, chartSeries, { height:200, invertRight: ovSec==='top' });
-      content += chartFooter;
-      content += '</div>';
+      // ── Gained / Lost: horizontal bar chart por URL ──
+      if (ovSec === 'gained' || ovSec === 'lost') {
+        if (!prev) return;
+        var rows = ovSec === 'gained' ? topGainClics : topDropClics;
+        var color = ovSec === 'gained' ? '#059669' : '#DC2626';
+        var title = ovSec === 'gained' ? 'Top páginas con más clics ganados' : 'Top páginas con más clics perdidos';
+        var verb  = ovSec === 'gained' ? 'crecieron' : 'cayeron';
+        content += '<div class="panel" style="padding:1rem 1.2rem 0.8rem">'+
+          '<p style="font-size:11px;font-weight:700;color:'+color+';margin:0 0 10px;letter-spacing:.2px">'+title+'</p>'+
+          deltaBarChart(rows, color, verb)+
+          '<p style="font-size:10px;color:#94A3B8;padding:6px 0 2px;margin:0">vs '+esc(prevLabel)+'</p>'+
+          '</div>';
+      }
     })();
+
+    // ── Per-section KPI row ──
+    function miniStat(label, value, sub, color) {
+      return '<div style="background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:12px 14px;flex:1;min-width:0">'+
+        '<p style="font-size:10px;color:#64748B;text-transform:uppercase;letter-spacing:.4px;margin:0 0 4px;font-weight:600">'+label+'</p>'+
+        '<p style="font-size:20px;font-weight:800;color:'+(color||'#0F172A')+';margin:0 0 2px;letter-spacing:-.5px;line-height:1.1">'+value+'</p>'+
+        '<p style="font-size:10px;color:#94A3B8;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+sub+'</p>'+
+        '</div>';
+    }
+    var statsRow = '';
+    if (ovSec === 'top') {
+      var topSum = topClics.reduce(function(a,r){ return a + r.clics; }, 0);
+      var totalClics = enriched.reduce(function(a,r){ return a + r.clics; }, 0);
+      var share = totalClics ? Math.round(topSum / totalClics * 100) : 0;
+      var topImpr = topClics.reduce(function(a,r){ return a + r.impr; }, 0);
+      var avgCTR = topImpr ? (topSum / topImpr * 100) : 0;
+      var avgPos = topClics.length ? (topClics.reduce(function(a,r){ return a + r.pos; }, 0) / topClics.length) : 0;
+      statsRow =
+        miniStat('Clics del Top '+topClics.length, Math.round(topSum).toLocaleString(), share+'% del tráfico total', '#E85249') +
+        miniStat('Impresiones del Top', fmtK(topImpr), 'Acumulado en '+topClics.length+' páginas', '#059669') +
+        miniStat('CTR promedio Top', avgCTR.toFixed(2)+'%', 'Eficiencia al convertir impresiones', '#F59E0B') +
+        miniStat('Posición media Top', avgPos.toFixed(1), avgPos <= 10 ? 'Página 1 de Google' : (avgPos <= 20 ? 'Página 2' : 'Más allá de pág. 2'), '#64748B');
+    } else if (ovSec === 'gained' && prev) {
+      var gainSumClics = topGainClics.reduce(function(a,r){ return a + r.dClics; }, 0);
+      var gainSumImpr  = topGainImpr.reduce(function(a,r){ return a + r.dImpr; }, 0);
+      var best = topGainClics[0];
+      var gainPct = withDelta.length ? Math.round(withDelta.filter(function(r){return r.dClics>0;}).length / withDelta.length * 100) : 0;
+      statsRow =
+        miniStat('Δ clics ganados', '+'+Math.round(gainSumClics).toLocaleString(), 'Top '+topGainClics.length+' páginas que más crecieron', '#059669') +
+        miniStat('Δ impresiones ganadas', '+'+fmtK(gainSumImpr), 'Top '+topGainImpr.length+' páginas en impresiones', '#059669') +
+        miniStat('Mejor ganadora', best ? '+'+Math.round(best.dClics).toLocaleString()+' clics' : '—', best ? shortURL(best.url) : 'sin datos', '#059669') +
+        miniStat('% páginas que crecieron', gainPct+'%', withDelta.length+' páginas con datos comparables', '#059669');
+    } else if (ovSec === 'lost' && prev) {
+      var lostSumClics = topDropClics.reduce(function(a,r){ return a + r.dClics; }, 0);
+      var lostSumImpr  = topDropImpr.reduce(function(a,r){ return a + r.dImpr; }, 0);
+      var worst = topDropClics[0];
+      var lostPct = withDelta.length ? Math.round(withDelta.filter(function(r){return r.dClics<0;}).length / withDelta.length * 100) : 0;
+      statsRow =
+        miniStat('Δ clics perdidos', Math.round(lostSumClics).toLocaleString(), 'Top '+topDropClics.length+' páginas que más cayeron', '#DC2626') +
+        miniStat('Δ impresiones perdidas', fmtK(lostSumImpr), 'Top '+topDropImpr.length+' páginas en impresiones', '#DC2626') +
+        miniStat('Peor caída', worst ? Math.round(worst.dClics).toLocaleString()+' clics' : '—', worst ? shortURL(worst.url) : 'sin datos', '#DC2626') +
+        miniStat('% páginas que cayeron', lostPct+'%', withDelta.length+' páginas con datos comparables', '#DC2626');
+    }
+    if (statsRow) {
+      content += '<div style="display:flex;gap:10px;margin:14px 0">'+statsRow+'</div>';
+    }
 
     // ── Table per selected section ──
     if(ovSec==='top'){
-      var pTop = paretoSplit(topClics, function(r){ return r.clics !== undefined ? r.clics : pN(r.Clics); });
+      var pTop = paretoSplit(topClics, function(r){ return r.clics; });
       if(pTop.count > 0 && pages.length > 0) content += paretoBadge(pTop.count, pages.length);
-      content += pageTable(topClics, false, '', null, pTop.count);
+      content += pageTable(topClics, !!prev, null, pTop.count);
     } else if(ovSec==='gained'){
       if(!prev){
         content += '<div class="insight info" style="margin-top:8px">Activa la comparación de período (botón de calendario arriba) para ver qué páginas están creciendo.</div>';
       } else {
-        content += pageTable(topGainClics, true, 'dClics', 'promocionar');
+        var pGain = paretoSplit(topGainClics, function(r){ return r.dClics; });
+        content += pageTable(topGainClics, true, 'promocionar', pGain.count);
       }
     } else if(ovSec==='lost'){
       if(!prev){
         content += '<div class="insight info" style="margin-top:8px">Activa la comparación de período (botón de calendario arriba) para ver qué páginas están cayendo.</div>';
       } else {
-        content += pageTable(topDropClics, true, 'dClics', 'optimizar');
+        content += pageTable(topDropClics, true, 'optimizar');
       }
     }
   }
