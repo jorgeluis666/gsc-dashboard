@@ -1014,32 +1014,58 @@ function buildHTML(){
       fetchURLFocus(S.overviewFocusUrl);
       return '<div class="panel" style="padding:1rem 1.2rem 0.6rem;margin-bottom:12px"><p style="font-size:10px;color:#aaa;padding:4px 0 6px">Cargando tendencia de URL…</p></div>';
     }
-    var ut;
+    // Position-aligned overlay (GSC-style): day-1 of current overlays day-1 of
+    // compare, day-2 of current overlays day-2 of compare, etc. Solid = actual,
+    // dashed = anterior, same color per metric.
+    var utCur, utCmp = [];
     if (usingDirect) {
-      ut = aggregateByDay(S.overviewFocusData || []);
+      utCur = aggregateByDay(S.overviewFocusData || []);
+      // Direct mode: compare data per URL isn't fetched here yet.
     } else {
-      // Combine filter + compare periods chronologically so the URL trend spans
-      // all selected weeks as a single continuous line (2+ points).
-      var fSnaps = filteredSnaps();
-      var cSnaps = compareOn && typeof compareSnaps === 'function' ? compareSnaps() : [];
-      var combined = cSnaps.concat(fSnaps);
-      var seen = {};
-      combined = combined.filter(function(s){ if (seen[s.label]) return false; seen[s.label]=true; return true; });
-      combined.sort(function(a,b){ return (a.label||'').localeCompare(b.label||''); });
-      ut = buildURLTrend(S.overviewFocusUrl, combined.length ? combined : fSnaps);
+      utCur = buildURLTrend(S.overviewFocusUrl, filteredSnaps());
+      if (compareOn && typeof compareSnaps === 'function') {
+        var cs = compareSnaps();
+        if (cs.length) utCmp = buildURLTrend(S.overviewFocusUrl, cs);
+      }
     }
-    if (!ut.length) return '';
-    var labels = ut.map(function(d){ return d.label; });
+    if (!utCur.length) return '';
+    var maxLen = Math.max(utCur.length, utCmp.length);
+    // End-align so the latest point sits at position N (typical GSC layout).
+    function alignEnd(arr, len) { var a = arr.slice(); while (a.length < len) a.unshift(null); return a; }
+    var curClics = alignEnd(utCur.map(function(d){ return d.clics; }), maxLen);
+    var curImpr  = alignEnd(utCur.map(function(d){ return d.impr;  }), maxLen);
+    var cmpClics = alignEnd(utCmp.map(function(d){ return d.clics; }), maxLen);
+    var cmpImpr  = alignEnd(utCmp.map(function(d){ return d.impr;  }), maxLen);
+    var labels = [];
+    for (var i = 0; i < maxLen; i++) labels.push(String(i + 1));
     var series = [
-      { label:'Clics', values: ut.map(function(d){ return d.clics; }), color:'#E85249', scale:'clics' },
-      { label:'Impr.', values: ut.map(function(d){ return d.impr;  }), color:'#059669', dashed:true, scale:'impr' }
+      { label:'Clics',        values: curClics, color:'#E85249', scale:'clics' },
+      { label:'Impresiones',  values: curImpr,  color:'#059669', scale:'impr'  }
     ];
+    if (utCmp.length) {
+      series.push({ label:'Clics (ant.)',       values: cmpClics, color:'#E85249', dashed:true, scale:'clics' });
+      series.push({ label:'Impresiones (ant.)', values: cmpImpr,  color:'#059669', dashed:true, scale:'impr'  });
+    }
+    // Human-readable caption: "Actual: 13–19 abr · Anterior: 6–12 abr"
+    function periodCaption(snaps) {
+      if (!snaps || !snaps.length) return '';
+      var first = snaps[0].label, last = snaps[snaps.length-1].label;
+      if (first === last) return formatRangeLabel(first);
+      return formatRangeLabel(first + ' → ' + last);
+    }
+    var curLbl = usingDirect ? activeRangeLbl : periodCaption(filteredSnaps());
+    var cmpLbl = utCmp.length ? periodCaption(compareSnaps()) : '';
+    var captionBits = [];
+    if (curLbl) captionBits.push('<b style="color:#334155">Actual</b>: '+esc(curLbl));
+    if (cmpLbl) captionBits.push('<b style="color:#94A3B8">Anterior</b>: '+esc(cmpLbl));
     var html = '<div class="panel" style="padding:1rem 1.2rem 0.6rem;margin-bottom:12px">';
     if (labels.length >= 1) html += svgLineChart(labels, series, { height:200, primaryScale:'impr' });
-    var granularityNote = usingDirect
-      ? ''
-      : '<p style="font-size:10px;color:#94A3B8;padding:2px 0 6px;margin:0">Cada punto es un agregado semanal · conecta GSC para ver datos diarios por URL.</p>';
-    html += granularityNote;
+    if (captionBits.length) {
+      html += '<p style="font-size:10px;color:#64748B;padding:2px 0 2px;margin:0">'+captionBits.join(' &nbsp;·&nbsp; ')+'</p>';
+    }
+    if (!usingDirect) {
+      html += '<p style="font-size:10px;color:#94A3B8;padding:0 0 6px;margin:0">Cada punto es un agregado semanal · conecta GSC para ver datos diarios por URL.</p>';
+    }
     html += '<div style="display:flex;align-items:center;gap:10px;padding:4px 0 6px">'+
       '<span style="font-size:10px;color:#E85249;font-weight:600">'+esc(shortURL(S.overviewFocusUrl))+'</span>'+
       '<button onclick="S.overviewFocusUrl=null;S.overviewFocusData=null;render()" style="font-size:10px;padding:2px 8px;border:1px solid #ddd;border-radius:12px;background:transparent;cursor:pointer;color:#666">× Cerrar</button>'+
@@ -1537,30 +1563,54 @@ function buildHTML(){
           content += '<div class="panel" style="padding:1rem 1.2rem 0.6rem"><p style="font-size:10px;color:#aaa;padding:4px 0 6px">Cargando tendencia de URL…</p></div>';
           return;
         }
-        var ut;
+        // Position-aligned overlay (GSC-style): day-1 of current overlays day-1
+        // of compare, etc. Solid = actual, dashed = anterior, same color per
+        // metric.
+        var utCur, utCmp = [];
         if (usingDirect) {
-          ut = aggregateByDay(S.overviewFocusData || []);
+          utCur = aggregateByDay(S.overviewFocusData || []);
         } else {
-          // Combine filter + compare periods chronologically so the URL trend
-          // spans both ranges as a single continuous line (2+ points).
-          var fSnaps = filteredSnaps();
-          var cSnaps = compareOn && typeof compareSnaps === 'function' ? compareSnaps() : [];
-          var combined = cSnaps.concat(fSnaps);
-          var seen = {};
-          combined = combined.filter(function(s){ if (seen[s.label]) return false; seen[s.label]=true; return true; });
-          combined.sort(function(a,b){ return (a.label||'').localeCompare(b.label||''); });
-          ut = buildURLTrend(S.overviewFocusUrl, combined.length ? combined : fSnaps);
+          utCur = buildURLTrend(S.overviewFocusUrl, filteredSnaps());
+          if (compareOn && typeof compareSnaps === 'function') {
+            var cs = compareSnaps();
+            if (cs.length) utCmp = buildURLTrend(S.overviewFocusUrl, cs);
+          }
         }
-        if (!ut.length) return;
-        var fLabels = ut.map(function(d){ return d.label; });
+        if (!utCur.length) return;
+        var maxLen = Math.max(utCur.length, utCmp.length);
+        function alignEnd(arr, len) { var a = arr.slice(); while (a.length < len) a.unshift(null); return a; }
+        var curClics = alignEnd(utCur.map(function(d){ return d.clics; }), maxLen);
+        var curImpr  = alignEnd(utCur.map(function(d){ return d.impr;  }), maxLen);
+        var cmpClics = alignEnd(utCmp.map(function(d){ return d.clics; }), maxLen);
+        var cmpImpr  = alignEnd(utCmp.map(function(d){ return d.impr;  }), maxLen);
+        var fLabels = [];
+        for (var iF = 0; iF < maxLen; iF++) fLabels.push(String(iF + 1));
         var fSeries = [
-          { label:'Clics', values: ut.map(function(d){ return d.clics; }), color:'#E85249', scale:'clics' },
-          { label:'Impr.', values: ut.map(function(d){ return d.impr;  }), color:'#059669', dashed:true, scale:'impr' }
+          { label:'Clics',        values: curClics, color:'#E85249', scale:'clics' },
+          { label:'Impresiones',  values: curImpr,  color:'#059669', scale:'impr'  }
         ];
+        if (utCmp.length) {
+          fSeries.push({ label:'Clics (ant.)',       values: cmpClics, color:'#E85249', dashed:true, scale:'clics' });
+          fSeries.push({ label:'Impresiones (ant.)', values: cmpImpr,  color:'#059669', dashed:true, scale:'impr'  });
+        }
+        function periodCaption(snaps) {
+          if (!snaps || !snaps.length) return '';
+          var first = snaps[0].label, last = snaps[snaps.length-1].label;
+          if (first === last) return formatRangeLabel(first);
+          return formatRangeLabel(first + ' → ' + last);
+        }
+        var curLbl = usingDirect ? activeRangeLbl : periodCaption(filteredSnaps());
+        var cmpLbl = utCmp.length ? periodCaption(compareSnaps()) : '';
+        var captionBits = [];
+        if (curLbl) captionBits.push('<b style="color:#334155">Actual</b>: '+esc(curLbl));
+        if (cmpLbl) captionBits.push('<b style="color:#94A3B8">Anterior</b>: '+esc(cmpLbl));
         content += '<div class="panel" style="padding:1rem 1.2rem 0.6rem">';
         if (fLabels.length >= 1) content += svgLineChart(fLabels, fSeries, { height:200, primaryScale:'impr' });
+        if (captionBits.length) {
+          content += '<p style="font-size:10px;color:#64748B;padding:2px 0 2px;margin:0">'+captionBits.join(' &nbsp;·&nbsp; ')+'</p>';
+        }
         if (!usingDirect) {
-          content += '<p style="font-size:10px;color:#94A3B8;padding:2px 0 6px;margin:0">Cada punto es un agregado semanal · conecta GSC para ver datos diarios por URL.</p>';
+          content += '<p style="font-size:10px;color:#94A3B8;padding:0 0 6px;margin:0">Cada punto es un agregado semanal · conecta GSC para ver datos diarios por URL.</p>';
         }
         content += '<div style="display:flex;align-items:center;gap:10px;padding:4px 0 6px">'+
           '<span style="font-size:10px;color:#E85249;font-weight:600">'+esc(shortURL(S.overviewFocusUrl))+'</span>'+
