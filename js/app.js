@@ -645,6 +645,8 @@ function applyDateFilter() {
   }
   S.overviewRange   = S.pendingRange;
   S.showDateModal   = false;
+  // Applying the "Filtrar" tab disables comparison — single-period view (matches GSC behavior).
+  S.compareEnabled  = false;
   S.gscCompareData  = null;
   saveState();
   if (S.accessToken && S.gscSiteUrl) fetchGSCData();
@@ -832,42 +834,26 @@ function buildHTML(){
   var usingDirect = !!S.gscData;
   var hasSnaps = S.snapshots.length > 0;
   var hasData  = usingDirect || hasSnaps;
+  // Comparison is shown ONLY when the user explicitly enables it (matches GSC behavior).
+  var compareOn = !!S.compareEnabled;
   var cur, prev, prevLabel;
   if (usingDirect) {
     cur  = { data: S.gscData };
-    prev = S.gscCompareData ? { data: S.gscCompareData } : null;
-    prevLabel = (S.gscCompareData)
+    prev = (compareOn && S.gscCompareData) ? { data: S.gscCompareData } : null;
+    prevLabel = (compareOn && S.gscCompareData)
       ? ((S.gscCompareData.startDate||'') + ' – ' + (S.gscCompareData.endDate||''))
       : 'período anterior';
   } else {
     // Date filter is the principal node — aggregate all snapshots in the filtered range.
     var fSnaps = filteredSnaps();
     var cSnaps = (typeof compareSnaps === 'function') ? compareSnaps() : [];
-    if (fSnaps.length) {
-      cur = aggregateSnapsData(fSnaps);
-    } else {
-      cur = S.snapshots[S.curIdx] || null;
-    }
-    if (S.compareEnabled && cSnaps.length) {
+    cur = fSnaps.length ? aggregateSnapsData(fSnaps) : (S.snapshots[S.curIdx] || null);
+    if (compareOn && cSnaps.length) {
       prev = aggregateSnapsData(cSnaps);
       prevLabel = (cSnaps[0].label || '') + (cSnaps.length>1 ? ' → '+cSnaps[cSnaps.length-1].label : '');
-    } else if (fSnaps.length > 1) {
-      // Implicit comparison: use the snapshot just before the filtered range (if any) so deltas make sense
-      var sortedAll = S.snapshots.slice().sort(function(a,b){ return a.label.localeCompare(b.label); });
-      var firstIdx = sortedAll.findIndex(function(s){ return s.label === fSnaps[0].label; });
-      if (firstIdx > 0) {
-        // Same window length immediately before
-        var preWindow = sortedAll.slice(Math.max(0, firstIdx - fSnaps.length), firstIdx);
-        prev = aggregateSnapsData(preWindow);
-        prevLabel = preWindow.length
-          ? ((preWindow[0].label||'') + (preWindow.length>1 ? ' → '+preWindow[preWindow.length-1].label : ''))
-          : 'período anterior';
-      } else {
-        prev = null; prevLabel = 'período anterior';
-      }
     } else {
-      prev = (S.curIdx > 0 ? S.snapshots[S.curIdx - 1] : null);
-      prevLabel = (prev && prev.label) ? prev.label : 'período anterior';
+      prev = null;
+      prevLabel = 'período anterior';
     }
   }
 
@@ -1199,15 +1185,20 @@ function buildHTML(){
   if(S.tab==='overview'){
     function kpiCard(lbl,val,pv,fmt,sfx,inv,iconCls,iconSvg){
       var f=fmt||function(v){return Math.round(v).toLocaleString('es-PE');};
-      var d=pv!=null?val-pv:null;
-      var good=d===null?null:(inv?d<0:d>0);
-      var deltaHtml='<div class="kpi-delta">';
-      if(d!==null&&Math.abs(d)>0.001){
-        deltaHtml+='<span class="'+(good?'up':'dn')+'">'+(good?'↑':'↓')+' '+f(Math.abs(d))+(sfx||'')+'</span> vs anterior';
-      } else {
-        deltaHtml+='<span class="neu">primer snapshot</span>';
+      var deltaHtml = '';
+      if (compareOn) {
+        var d = pv != null ? val - pv : null;
+        var good = d === null ? null : (inv ? d < 0 : d > 0);
+        deltaHtml = '<div class="kpi-delta">';
+        if (d !== null && Math.abs(d) > 0.001) {
+          deltaHtml += '<span class="'+(good?'up':'dn')+'">'+(good?'↑':'↓')+' '+f(Math.abs(d))+(sfx||'')+'</span> vs '+esc(prevLabel);
+        } else if (pv != null) {
+          deltaHtml += '<span class="'+(inv?'up':'neu')+'">= '+f(val)+(sfx||'')+'</span> vs '+esc(prevLabel);
+        } else {
+          deltaHtml += '<span class="neu">sin datos previos</span>';
+        }
+        deltaHtml += '</div>';
       }
-      deltaHtml+='</div>';
       return'<div class="kpi-card">'+
         '<div class="kpi-icon '+iconCls+'">'+iconSvg+'</div>'+
         '<div class="kpi-lbl">'+lbl+'</div>'+
