@@ -499,7 +499,7 @@ function svgLineChart(labels, series, opts) {
   var padL = 52, padR = opts.yRightLabel ? 52 : 16, padT = 34, padB = 46;
   var cW = W - padL - padR, cH = H - padT - padB;
   var n = labels.length;
-  if (n < 2) return '';
+  if (n < 1) return '';
 
   // Separate left and right series
   var leftSeries  = series.filter(function(s){ return !s.yRight; });
@@ -524,7 +524,7 @@ function svgLineChart(labels, series, opts) {
     return padT + cH - norm * cH;
   }
 
-  function xOf(i) { return padL + i / (n - 1) * cW; }
+  function xOf(i) { return n === 1 ? padL + cW / 2 : padL + i / (n - 1) * cW; }
 
   var svg = '<svg class="chart-svg" viewBox="0 0 '+W+' '+H+'" style="width:100%;display:block">';
 
@@ -999,7 +999,7 @@ function buildHTML(){
       { label:'Impr.', values: ut.map(function(d){ return d.impr;  }), color:'#059669', dashed:true }
     ];
     var html = '<div class="panel" style="padding:1rem 1.2rem 0.6rem;margin-bottom:12px">';
-    if (labels.length >= 2) html += svgLineChart(labels, series, { height:200 });
+    if (labels.length >= 1) html += svgLineChart(labels, series, { height:200 });
     html += '<div style="display:flex;align-items:center;gap:10px;padding:4px 0 6px">'+
       '<span style="font-size:10px;color:#E85249;font-weight:600">'+esc(shortURL(S.overviewFocusUrl))+'</span>'+
       '<button onclick="S.overviewFocusUrl=null;S.overviewFocusData=null;render()" style="font-size:10px;padding:2px 8px;border:1px solid #ddd;border-radius:12px;background:transparent;cursor:pointer;color:#666">× Cerrar</button>'+
@@ -1429,10 +1429,23 @@ function buildHTML(){
     var ovSec = S.overviewSection || 'top';
 
     // ── Chart data ──
-    var td = usingDirect ? aggregateByDay(S.gscData.grafico || []) : buildTrendData(filteredSnaps());
+    // Prefer daily granularity whenever grafico rows are available. Fall back to
+    // one-point-per-snapshot (buildTrendData) only when no grafico data exists.
+    function trendFromSnaps(snaps) {
+      if (!snaps || !snaps.length) return [];
+      var allRows = [];
+      snaps.forEach(function(s){
+        if (s && s.data && s.data.grafico && s.data.grafico.length) {
+          allRows = allRows.concat(s.data.grafico);
+        }
+      });
+      var daily = aggregateByDay(allRows);
+      return (daily.length >= 1) ? daily : buildTrendData(snaps);
+    }
+    var td  = usingDirect ? aggregateByDay(S.gscData.grafico || []) : trendFromSnaps(filteredSnaps());
     var ctd = usingDirect
       ? (S.gscCompareData ? aggregateByDay(S.gscCompareData.grafico || []) : [])
-      : (compareSnaps().length ? buildTrendData(compareSnaps()) : []);
+      : (compareSnaps().length ? trendFromSnaps(compareSnaps()) : []);
 
     // ── Large section cards ──
     function secCard(key, color, iconPath, label, statVal, desc) {
@@ -1493,7 +1506,7 @@ function buildHTML(){
           { label:'Impr.', values: ut.map(function(d){ return d.impr;  }), color:'#059669', dashed:true }
         ];
         content += '<div class="panel" style="padding:1rem 1.2rem 0.6rem">';
-        if (fLabels.length >= 2) content += svgLineChart(fLabels, fSeries, { height:200 });
+        if (fLabels.length >= 1) content += svgLineChart(fLabels, fSeries, { height:200 });
         content += '<div style="display:flex;align-items:center;gap:10px;padding:4px 0 6px">'+
           '<span style="font-size:10px;color:#E85249;font-weight:600">'+esc(shortURL(S.overviewFocusUrl))+'</span>'+
           '<button onclick="S.overviewFocusUrl=null;S.overviewFocusData=null;render()" style="font-size:10px;padding:2px 8px;border:1px solid #ddd;border-radius:12px;background:transparent;cursor:pointer;color:#666">× Total sitio</button>'+
@@ -1503,7 +1516,10 @@ function buildHTML(){
 
       // ── Top páginas: site-wide trend ──
       if (ovSec === 'top') {
-        if (td.length < 2) return;
+        if (td.length < 1) {
+          content += '<div class="panel" style="padding:1rem 1.2rem 0.8rem"><p style="font-size:11px;color:#94A3B8;margin:0">Sin datos de tendencia para este rango.</p></div>';
+          return;
+        }
         var tLabels = td.map(function(d){ return d.label; });
         var tSeries = [
           { label:'Clics',       values: td.map(function(d){ return d.clics; }), color:'#E85249' },
