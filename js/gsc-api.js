@@ -311,6 +311,18 @@ function computeCompareRange() {
       end:   new Date(me.getFullYear()-1, me.getMonth(), me.getDate()).toISOString().slice(0,10)
     };
   }
+  if (S.compareRange === 'week') {
+    // Shift entire window 7 days back
+    var ws = new Date(ms); ws.setDate(ws.getDate() - 7);
+    var we = new Date(me); we.setDate(we.getDate() - 7);
+    return { start: ws.toISOString().slice(0,10), end: we.toISOString().slice(0,10) };
+  }
+  if (S.compareRange === 'month') {
+    // Shift entire window ~30 days back (month-over-month)
+    var Ms = new Date(ms); Ms.setDate(Ms.getDate() - 30);
+    var Me = new Date(me); Me.setDate(Me.getDate() - 30);
+    return { start: Ms.toISOString().slice(0,10), end: Me.toISOString().slice(0,10) };
+  }
   // 'previous' — same length immediately before
   var cEnd = new Date(ms); cEnd.setDate(cEnd.getDate() - 1);
   var cStart = new Date(cEnd); cStart.setDate(cStart.getDate() - days);

@@ -582,6 +582,33 @@ function compareSnaps() {
       return sorted.find(function(s){ return s.label === prev; }) || null;
     }).filter(Boolean);
   }
+  if (S.compareRange === 'week') {
+    // Same ISO weeks, but shifted one week earlier
+    return mainSnaps.map(function(snap) {
+      var m = snap.label.match(/^(\d{4})-W(\d{2})$/);
+      if (!m) return null;
+      var y = parseInt(m[1]), w = parseInt(m[2]) - 1, py = y;
+      if (w <= 0) { py = y - 1; w = 52; }
+      var prev = py + '-W' + (w < 10 ? '0'+w : w);
+      return sorted.find(function(s){ return s.label === prev; }) || null;
+    }).filter(Boolean);
+  }
+  if (S.compareRange === 'month') {
+    // Same ISO weeks, shifted ~4 weeks earlier (≈ one month)
+    return mainSnaps.map(function(snap) {
+      var mon = weekLabelToMonday(snap.label);
+      if (!mon) return null;
+      var target = new Date(mon); target.setDate(target.getDate() - 28);
+      var tStr = target.toISOString().slice(0, 10);
+      // Find the snapshot whose Monday is closest (±3 days) to the target
+      return sorted.find(function(s){
+        var sm = weekLabelToMonday(s.label);
+        if (!sm) return false;
+        var diff = Math.abs((sm - target) / 86400000);
+        return diff <= 3;
+      }) || null;
+    }).filter(Boolean);
+  }
   if (S.compareRange === 'custom' && S.compareDateFrom && S.compareDateTo) {
     return sorted.filter(function(snap) {
       var mon = weekLabelToMonday(snap.label);
@@ -976,10 +1003,10 @@ function buildHTML(){
   var activeRangeLbl = S.overviewRange === 'custom' && S.overviewDateFrom && S.overviewDateTo
     ? S.overviewDateFrom.slice(5).replace('-','/') + ' – ' + S.overviewDateTo.slice(5).replace('-','/')
     : (RANGE_LABELS[S.overviewRange] || 'Últimos 3 meses').replace('Últimos ','');
-  var compareLblMap = { previous:'Período anterior', year:'Año anterior', custom:'Personalizado' };
+  var compareLblMap = { previous:'Período anterior', year:'Año anterior', week:'Semana anterior', month:'Mes anterior', custom:'Personalizado' };
   var compareBadge = S.compareEnabled
     ? '<span style="font-size:11px;background:#EFF6FF;color:#1A73E8;border:1px solid #BFDBFE;border-radius:20px;padding:2px 9px;display:inline-flex;align-items:center;gap:6px">'+
-        'vs. '+(compareLblMap[S.compareRange]||'')+
+        activeRangeLbl+' vs. '+(compareLblMap[S.compareRange]||'')+
         '<button onclick="disableCompare()" style="background:none;border:none;cursor:pointer;color:#1A73E8;font-size:13px;line-height:1;padding:0">×</button>'+
       '</span>'
     : '';
@@ -1842,6 +1869,8 @@ function buildHTML(){
     var compareRanges = [
       { key:'previous', lbl:'Período anterior' },
       { key:'year',     lbl:'Año anterior' },
+      { key:'week',     lbl:'Semana anterior' },
+      { key:'month',    lbl:'Mes anterior' },
       { key:'custom',   lbl:'Personalizado' }
     ];
     var compareRows = compareRanges.map(function(r) {
