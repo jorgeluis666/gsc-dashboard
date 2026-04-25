@@ -1,34 +1,21 @@
 // ── STATE ────────────────────────────────────────────────
 var S = {
-  snapshots: [],
   trackedURLs: [],
-  curIdx: null,
   tab: 'overview',
   qFilter: '',
-  // drive
+  // auth (Google OAuth — shared with GSC API)
   clientId: '976153544066-8l99fptg5oo4m7tssi9pnadav5nicf5m.apps.googleusercontent.com',
-  folderId: '',
-  folderName: '',
   accessToken: null,
-  driveStatus: 'disconnected', // disconnected | connected | loading
-  driveMsg: '',
   // gsc
   gscStatus: 'disconnected',  // disconnected | loading | connected
   gscSiteUrl: '',
   gscSites: [],
-  gscWeeks: 8,
-  gscImporting: false,
-  gscPendingConnect: false,
-  // pending manual upload
-  pending: null,
-  pendingLabel: '',
   // direct api data (not persisted)
   gscData: null,
   gscCompareData: null,
   gscLoading: false,
   overviewFocusData: null,
   // ui
-  refreshing: false,
   overviewSection: 'top',  // top | gained | lost
   overviewFocusUrl: null,  // URL whose trend is shown in the chart, or null = site total
   ovPageSize: 10,          // páginas por vista en la tabla "Todas las páginas"
@@ -57,13 +44,9 @@ function loadState() {
     var v = localStorage.getItem('gsc_v2');
     if (v) {
       var d = JSON.parse(v);
-      S.snapshots   = d.snapshots   || [];
       S.trackedURLs = d.trackedURLs || [];
       // Client ID is hardcoded — never override it from localStorage
-      S.folderId    = d.folderId    || '';
-      S.folderName  = d.folderName  || '';
       S.gscSiteUrl  = d.gscSiteUrl  || '';
-      S.gscWeeks    = d.gscWeeks    || 8;
       S.overviewRange   = d.overviewRange   || '3m';
       S.overviewDateFrom  = d.overviewDateFrom  || '';
       S.overviewDateTo    = d.overviewDateTo    || '';
@@ -71,7 +54,6 @@ function loadState() {
       S.compareRange      = d.compareRange      || 'previous';
       S.compareDateFrom   = d.compareDateFrom   || '';
       S.compareDateTo     = d.compareDateTo     || '';
-      if (S.snapshots.length) S.curIdx = S.snapshots.length - 1;
     }
   } catch(e) {}
 }
@@ -79,13 +61,8 @@ function loadState() {
 function saveState() {
   try {
     localStorage.setItem('gsc_v2', JSON.stringify({
-      snapshots:   S.snapshots,
       trackedURLs: S.trackedURLs,
-      clientId:    S.clientId,
-      folderId:    S.folderId,
-      folderName:  S.folderName,
       gscSiteUrl:  S.gscSiteUrl,
-      gscWeeks:    S.gscWeeks,
       overviewRange:    S.overviewRange,
       overviewDateFrom: S.overviewDateFrom,
       overviewDateTo:   S.overviewDateTo,
@@ -148,27 +125,8 @@ function calcMRange(snaps) {
   return { clics: tc, impr: ti, ctr: ti > 0 ? (tc/ti*100) : 0, pos: posCnt ? posSum/posCnt : 0 };
 }
 
-function aggregateByWeek(rows) {
-  if (!rows || !rows.length) return [];
-  var buckets = {};
-  rows.forEach(function(r) {
-    var fecha = r['Fecha'] || '';
-    if (!fecha) return;
-    var wk = typeof isoWeekLabel === 'function' ? isoWeekLabel(fecha) : fecha.slice(0, 7);
-    if (!buckets[wk]) buckets[wk] = { label: wk, clics: 0, impr: 0, posSum: 0, cnt: 0 };
-    buckets[wk].clics += pN(r.Clics);
-    buckets[wk].impr  += pN(r.Impresiones);
-    var pos = pP(r['Posición']);
-    if (pos > 0) { buckets[wk].posSum += pos; buckets[wk].cnt++; }
-  });
-  return Object.keys(buckets).sort().map(function(wk) {
-    var b = buckets[wk];
-    return { label: wk, clics: b.clics, impr: b.impr, pos: b.cnt ? b.posSum / b.cnt : 0 };
-  });
-}
-
 // Aggregate rows by day (one row per Fecha). Used for the Overview trend chart
-// so the X-axis shows every calendar day instead of weekly buckets.
+// so the X-axis shows every calendar day.
 function aggregateByDay(rows) {
   if (!rows || !rows.length) return [];
   var buckets = {};
@@ -186,49 +144,6 @@ function aggregateByDay(rows) {
     var b = buckets[d];
     return { label: d, clics: b.clics, impr: b.impr, pos: b.cnt ? b.posSum / b.cnt : 0 };
   });
-}
-// Aggregate snapshots into a single virtual snapshot (paginas, consultas, grafico, dispositivos, paises)
-// This makes the date filter the principal node: KPI cards, tables and rankings respect the chosen range.
-function aggregateSnapsData(snaps) {
-  if (!snaps || !snaps.length) return null;
-  if (snaps.length === 1) return snaps[0];
-  var firstLbl = snaps[0].label, lastLbl  = snaps[snaps.length-1].label;
-  var agg = { label: firstLbl + ' → ' + lastLbl, date: snaps[snaps.length-1].date, data: {} };
-  function aggDimension(type, keyName) {
-    var bucket = {};
-    snaps.forEach(function(s){
-      var rows = (s.data && s.data[type]) || [];
-      rows.forEach(function(r){
-        var k = r[keyName] || '';
-        if (!bucket[k]) bucket[k] = { name:k, clics:0, impr:0, posWeighted:0, weight:0 };
-        var c = pN(r.Clics), i = pN(r.Impresiones), p = pP(r['Posición']);
-        bucket[k].clics += c;
-        bucket[k].impr  += i;
-        if (p > 0 && i > 0) { bucket[k].posWeighted += p * i; bucket[k].weight += i; }
-      });
-    });
-    return Object.keys(bucket).map(function(k){
-      var v = bucket[k];
-      var ctr = v.impr ? (v.clics / v.impr * 100) : 0;
-      var pos = v.weight ? (v.posWeighted / v.weight) : 0;
-      var row = {};
-      row[keyName] = v.name;
-      row.Clics = v.clics;
-      row.Impresiones = v.impr;
-      row.CTR = ctr.toFixed(2) + '%';
-      row['Posición'] = pos.toFixed(1);
-      return row;
-    }).sort(function(a,b){ return pN(b.Clics) - pN(a.Clics); });
-  }
-  agg.data.paginas      = aggDimension('paginas',      'Páginas principales');
-  agg.data.consultas    = aggDimension('consultas',    'Consultas principales');
-  agg.data.dispositivos = aggDimension('dispositivos', 'Dispositivos');
-  agg.data.paises       = aggDimension('paises',       'Países');
-  // grafico: concatenate raw daily/weekly rows so chart reflects full range
-  var allG = [];
-  snaps.forEach(function(s){ if (s.data && s.data.grafico) allG = allG.concat(s.data.grafico); });
-  agg.data.grafico = allG;
-  return agg;
 }
 function posClass(p){return p<=10?'green':p<=20?'amber':'red';}
 function posLbl(p){return p<=10?'Pág. 1':p<=20?'Pág. 2':'Pág. '+Math.ceil(p/10);}
@@ -278,76 +193,6 @@ function addNote(urlIdx, noteText, noteDate) {
   if (!noteText) return;
   S.trackedURLs[urlIdx].notes.push({ date: noteDate||new Date().toISOString().slice(0,10), text: noteText });
   saveState(); render();
-}
-
-// Cross all snapshots for a URL
-function getURLHistory(url, snaps) {
-  return (snaps || S.snapshots).map(function(snap) {
-    var pages = snap.data.paginas || [];
-    var row = pages.find(function(r){
-      return (r['Páginas principales']||'').split('#')[0].replace(/\/$/,'') === url.split('#')[0].replace(/\/$/,'');
-    });
-    return {
-      label: snap.label,
-      date:  snap.date,
-      clics: row ? pN(row.Clics) : null,
-      impr:  row ? pN(row.Impresiones) : null,
-      ctr:   row ? row.CTR : null,
-      pos:   row ? pP(row['Posición']) : null,
-      found: !!row
-    };
-  });
-}
-
-// ── MANUAL UPLOAD ────────────────────────────────────────
-function processFiles(files) {
-  var readers = Array.from(files).map(function(f){
-    return new Promise(function(res){var r=new FileReader();r.onload=function(e){res(e.target.result);};r.readAsText(f,'utf-8');});
-  });
-  Promise.all(readers).then(function(texts){
-    var data={};
-    texts.forEach(function(text){var rows=parseCSV(text);if(!rows.length)return;var type=detectType(rows[0]);if(type!=='unknown')data[type]=rows;});
-    if(Object.keys(data).length>0){
-      var split = splitComparisonData(data);
-      S.pendingCurrent = split.current;
-      S.pendingPrev    = Object.keys(split.prev).length > 0 ? split.prev : null;
-      S.pendingLabels  = split.labels;
-      S.pending = split.current;
-      S.pendingLabel     = split.labels.a || new Date().toLocaleDateString('es-PE',{month:'short',year:'numeric'});
-      S.pendingLabelPrev = split.labels.b || '';
-      render();
-    } else toast('No se detectaron CSVs válidos');
-  });
-}
-
-function confirmManual(){
-  var lblInput    = document.getElementById('snap-label');
-  var lblPrevInput= document.getElementById('snap-label-prev');
-  var lbl     = (lblInput     && lblInput.value.trim())     || S.pendingLabel     || 'Sin etiqueta';
-  var prevLbl = (lblPrevInput && lblPrevInput.value.trim()) || S.pendingLabelPrev || (lbl + ' (anterior)');
-
-  var isComp = S.pendingPrev && Object.keys(S.pendingPrev).length > 0;
-
-  if (isComp) {
-    var prevExists = S.snapshots.find(function(s){ return s.label === prevLbl; });
-    if (!prevExists) {
-      S.snapshots.push({id: Date.now()-1, label: prevLbl, date: new Date().toISOString(), data: S.pendingPrev});
-    }
-  }
-
-  S.snapshots.push({id: Date.now(), label: lbl, date: new Date().toISOString(), data: S.pendingCurrent || S.pending});
-  S.snapshots.sort(function(a,b){ return a.label.localeCompare(b.label); });
-  S.curIdx = S.snapshots.length - 1;
-  S.pending = null; S.pendingCurrent = null; S.pendingPrev = null; S.pendingLabels = null;
-  saveState(); render();
-  toast(isComp ? '✓ 2 snapshots guardados: "'+prevLbl+'" y "'+lbl+'"' : '✓ Snapshot "'+lbl+'" guardado');
-}
-
-function deleteSnap(idx){
-  if(!confirm('¿Eliminar el snapshot "'+S.snapshots[idx].label+'"?'))return;
-  S.snapshots.splice(idx,1);
-  S.curIdx=S.snapshots.length>0?S.snapshots.length-1:null;
-  saveState();render();
 }
 
 // ── PARETO ───────────────────────────────────────────────
@@ -487,7 +332,7 @@ function dayLabelToShort(label) {
 }
 
 function xAxisLabelShort(label) {
-  // Weekly snapshots → show the full week range (e.g. "6–12 abr") so it's
+  // Weekly labels (legacy) → show the full week range (e.g. "6–12 abr") so it's
   // clear the point represents a 7-day aggregate, not a single calendar day.
   if (/^\d{4}-W\d{2}$/.test(label)) return weekLabelToRange(label);
   if (/^\d{4}-\d{2}-\d{2}/.test(label)) return dayLabelToShort(label);
@@ -635,96 +480,6 @@ function svgLineChart(labels, series, opts) {
 
   svg += '</svg>';
   return svg;
-}
-
-// Build trend data across all snapshots
-function buildTrendData(snaps) {
-  return (snaps || S.snapshots).map(function(snap) {
-    var m = calcM(snap);
-    return { label: snap.label, clics: m ? m.clics : 0, impr: m ? m.impr : 0, pos: m ? m.pos : 0 };
-  });
-}
-
-// Build trend data for a specific URL across all snapshots
-function buildURLTrend(url, snaps) {
-  return getURLHistory(url, snaps).map(function(h) {
-    return {
-      label: h.label,
-      clics: h.found ? h.clics : null,
-      impr:  h.found ? h.impr  : null,
-      pos:   h.found ? h.pos   : null
-    };
-  });
-}
-
-function filteredSnaps() {
-  var sorted = S.snapshots.slice().sort(function(a,b){ return a.label.localeCompare(b.label); });
-  if (S.overviewRange === 'custom' && S.overviewDateFrom && S.overviewDateTo) {
-    return sorted.filter(function(snap) {
-      var mon = weekLabelToMonday(snap.label);
-      if (!mon) return false;
-      var d = mon.toISOString().slice(0, 10);
-      return d >= S.overviewDateFrom && d <= S.overviewDateTo;
-    });
-  }
-  var n = RANGE_WEEKS[S.overviewRange] || sorted.length;
-  return sorted.slice(-n);
-}
-
-function compareSnaps() {
-  if (!S.compareEnabled) return [];
-  var mainSnaps = filteredSnaps();
-  if (!mainSnaps.length) return [];
-  var sorted = S.snapshots.slice().sort(function(a,b){ return a.label.localeCompare(b.label); });
-  if (S.compareRange === 'previous') {
-    var n = mainSnaps.length;
-    var firstMainIdx = sorted.findIndex(function(s){ return s.label === mainSnaps[0].label; });
-    return sorted.slice(Math.max(0, firstMainIdx - n), firstMainIdx);
-  }
-  if (S.compareRange === 'year') {
-    return mainSnaps.map(function(snap) {
-      var m = snap.label.match(/^(\d{4})-W(\d{2})$/);
-      if (!m) return null;
-      var prev = (parseInt(m[1]) - 1) + '-W' + m[2];
-      return sorted.find(function(s){ return s.label === prev; }) || null;
-    }).filter(Boolean);
-  }
-  if (S.compareRange === 'week') {
-    // Same ISO weeks, but shifted one week earlier
-    return mainSnaps.map(function(snap) {
-      var m = snap.label.match(/^(\d{4})-W(\d{2})$/);
-      if (!m) return null;
-      var y = parseInt(m[1]), w = parseInt(m[2]) - 1, py = y;
-      if (w <= 0) { py = y - 1; w = 52; }
-      var prev = py + '-W' + (w < 10 ? '0'+w : w);
-      return sorted.find(function(s){ return s.label === prev; }) || null;
-    }).filter(Boolean);
-  }
-  if (S.compareRange === 'month') {
-    // Same ISO weeks, shifted ~4 weeks earlier (≈ one month)
-    return mainSnaps.map(function(snap) {
-      var mon = weekLabelToMonday(snap.label);
-      if (!mon) return null;
-      var target = new Date(mon); target.setDate(target.getDate() - 28);
-      var tStr = target.toISOString().slice(0, 10);
-      // Find the snapshot whose Monday is closest (±3 days) to the target
-      return sorted.find(function(s){
-        var sm = weekLabelToMonday(s.label);
-        if (!sm) return false;
-        var diff = Math.abs((sm - target) / 86400000);
-        return diff <= 3;
-      }) || null;
-    }).filter(Boolean);
-  }
-  if (S.compareRange === 'custom' && S.compareDateFrom && S.compareDateTo) {
-    return sorted.filter(function(snap) {
-      var mon = weekLabelToMonday(snap.label);
-      if (!mon) return false;
-      var d = mon.toISOString().slice(0, 10);
-      return d >= S.compareDateFrom && d <= S.compareDateTo;
-    });
-  }
-  return [];
 }
 
 function openDateModal() {
@@ -913,8 +668,7 @@ var ICONS = {
   'páginas':     '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
   ideas:         '<svg viewBox="0 0 24 24"><line x1="12" y1="2" x2="12" y2="6"/><path d="M12 8a4 4 0 0 1 4 4c0 1.5-.8 2.8-2 3.5V17a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-1.5C8.8 14.8 8 13.5 8 12a4 4 0 0 1 4-4z"/><line x1="12" y1="21" x2="12" y2="22"/></svg>',
   configuracion: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
-  'configuración':'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
-  snapshots:     '<svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 3H8L6 7h12z"/></svg>'
+  'configuración':'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
 };
 
 // ── RENDER ────────────────────────────────────────────────
@@ -922,73 +676,19 @@ function render(){ document.getElementById('app').innerHTML = buildHTML(); bindE
 
 function buildHTML(){
 
-  // ── Confirm manual upload (full-screen modal) ──
-  if(S.pending){
-    var tl={grafico:'Gráfico',consultas:'Consultas',paginas:'Páginas',dispositivos:'Dispositivos',paises:'Países'};
-    var isComp = S.pendingPrev && Object.keys(S.pendingPrev).length > 0;
-    var fileList = '<div style="background:#f2f2f0;border-radius:8px;padding:10px 12px;margin-bottom:12px">'+
-      Object.keys(S.pending).map(function(t){
-        return'<div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12px">'+
-          '<span style="color:var(--green);font-weight:700">✓</span>'+
-          '<span>'+esc(tl[t]||t)+'</span>'+
-          '<span style="color:#aaa;font-size:11px">('+S.pending[t].length+' filas)</span></div>';
-      }).join('')+'</div>';
-
-    var compBadge = isComp
-      ? '<div style="background:#EAF3DE;border:1px solid #C0DD97;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#3B6D11">'+
-        '✓ Archivo de comparación detectado — se crearán <b>2 snapshots</b> automáticamente'+
-        '</div>'
-      : '';
-
-    var labelFields = isComp
-      ? '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">'+
-          '<div>'+
-            '<label style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px">Período más reciente (A)</label>'+
-            '<input id="snap-label" value="'+esc(S.pendingLabel||'')+'" placeholder="Ej: 23/3/26 - 29/3/26" style="width:100%">'+
-          '</div>'+
-          '<div>'+
-            '<label style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px">Período anterior (B)</label>'+
-            '<input id="snap-label-prev" value="'+esc(S.pendingLabelPrev||'')+'" placeholder="Ej: 16/3/26 - 22/3/26" style="width:100%">'+
-          '</div>'+
-        '</div>'
-      : '<label style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px">Etiqueta del período</label>'+
-        '<input id="snap-label" value="'+esc(S.pendingLabel||'')+'" placeholder="Ej: 2026-W15" style="width:100%;margin-bottom:12px">';
-
-    // pending upload — centered card
-    return'<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg)">'+
-    '<div class="setup-card" style="max-width:500px;width:100%">'+
-      '<h2 style="margin-bottom:12px">Confirmar carga</h2>'+
-      compBadge + fileList + labelFields +
-      '<div style="display:flex;gap:8px;margin-top:4px">'+
-        '<button class="btn primary" onclick="confirmManual()">'+(isComp?'Guardar 2 snapshots':'Guardar snapshot')+'</button>'+
-        '<button class="btn" onclick="S.pending=null;render()">Cancelar</button>'+
-      '</div></div></div>';
-  }
-
-  var usingDirect = !!S.gscData;
-  var hasSnaps = S.snapshots.length > 0;
-  var hasData  = usingDirect || hasSnaps;
+  var hasData  = !!S.gscData;
+  var usingDirect = hasData; // legacy alias — all data now comes from GSC direct
   // Comparison is shown ONLY when the user explicitly enables it (matches GSC behavior).
   var compareOn = !!S.compareEnabled;
   var cur, prev, prevLabel;
-  if (usingDirect) {
+  if (hasData) {
     cur  = { data: S.gscData };
     prev = (compareOn && S.gscCompareData) ? { data: S.gscCompareData } : null;
     prevLabel = (compareOn && S.gscCompareData)
       ? ((S.gscCompareData.startDate||'') + ' – ' + (S.gscCompareData.endDate||''))
       : 'período anterior';
   } else {
-    // Date filter is the principal node — aggregate all snapshots in the filtered range.
-    var fSnaps = filteredSnaps();
-    var cSnaps = (typeof compareSnaps === 'function') ? compareSnaps() : [];
-    cur = fSnaps.length ? aggregateSnapsData(fSnaps) : (S.snapshots[S.curIdx] || null);
-    if (compareOn && cSnaps.length) {
-      prev = aggregateSnapsData(cSnaps);
-      prevLabel = (cSnaps[0].label || '') + (cSnaps.length>1 ? ' → '+cSnaps[cSnaps.length-1].label : '');
-    } else {
-      prev = null;
-      prevLabel = 'período anterior';
-    }
+    cur = null; prev = null; prevLabel = 'período anterior';
   }
 
   // ── URL FOCUS HELPERS (shared by Overview, Artículos blog, Páginas) ──
@@ -1001,8 +701,7 @@ function buildHTML(){
     var bdr = focused ? '#E85249' : '#e2e8f0';
     var action = focused
       ? 'S.overviewFocusUrl=null;S.overviewFocusData=null;render()'
-      : (usingDirect ? 'S.overviewFocusUrl=\''+safeUrl+'\';S.overviewFocusData=null;fetchURLFocus(\''+safeUrl+'\')'
-                     : 'S.overviewFocusUrl=\''+safeUrl+'\';render()');
+      : 'S.overviewFocusUrl=\''+safeUrl+'\';S.overviewFocusData=null;fetchURLFocus(\''+safeUrl+'\')';
     return '<button onclick="'+action+'" title="Ver en gráfico" '+
       'style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;'+
       'border:1px solid '+bdr+';border-radius:4px;background:'+bg+';color:'+col+';cursor:pointer;padding:0;vertical-align:middle">'+
@@ -1010,61 +709,23 @@ function buildHTML(){
   }
   function urlFocusChartHTML() {
     if (!S.overviewFocusUrl) return '';
-    if (usingDirect && !S.overviewFocusData) {
+    if (!S.overviewFocusData) {
       fetchURLFocus(S.overviewFocusUrl);
       return '<div class="panel" style="padding:1rem 1.2rem 0.6rem;margin-bottom:12px"><p style="font-size:10px;color:#aaa;padding:4px 0 6px">Cargando tendencia de URL…</p></div>';
     }
-    // Position-aligned overlay (GSC-style): day-1 of current overlays day-1 of
-    // compare, day-2 of current overlays day-2 of compare, etc. Solid = actual,
-    // dashed = anterior, same color per metric.
-    var utCur, utCmp = [];
-    if (usingDirect) {
-      utCur = aggregateByDay(S.overviewFocusData || []);
-      // Direct mode: compare data per URL isn't fetched here yet.
-    } else {
-      utCur = buildURLTrend(S.overviewFocusUrl, filteredSnaps());
-      if (compareOn && typeof compareSnaps === 'function') {
-        var cs = compareSnaps();
-        if (cs.length) utCmp = buildURLTrend(S.overviewFocusUrl, cs);
-      }
-    }
+    var utCur = aggregateByDay(S.overviewFocusData || []);
     if (!utCur.length) return '';
-    var maxLen = Math.max(utCur.length, utCmp.length);
-    // End-align so the latest point sits at position N (typical GSC layout).
-    function alignEnd(arr, len) { var a = arr.slice(); while (a.length < len) a.unshift(null); return a; }
-    var curClics = alignEnd(utCur.map(function(d){ return d.clics; }), maxLen);
-    var curImpr  = alignEnd(utCur.map(function(d){ return d.impr;  }), maxLen);
-    var cmpClics = alignEnd(utCmp.map(function(d){ return d.clics; }), maxLen);
-    var cmpImpr  = alignEnd(utCmp.map(function(d){ return d.impr;  }), maxLen);
-    var labels = [];
-    for (var i = 0; i < maxLen; i++) labels.push(String(i + 1));
+    var labels = utCur.map(function(d){ return d.label; });
     var series = [
-      { label:'Clics',        values: curClics, color:'#E85249', scale:'clics' },
-      { label:'Impresiones',  values: curImpr,  color:'#059669', scale:'impr'  }
+      { label:'Clics',        values: utCur.map(function(d){ return d.clics; }), color:'#E85249', scale:'clics' },
+      { label:'Impresiones',  values: utCur.map(function(d){ return d.impr;  }), color:'#059669', scale:'impr'  }
     ];
-    if (utCmp.length) {
-      series.push({ label:'Clics (ant.)',       values: cmpClics, color:'#E85249', dashed:true, scale:'clics' });
-      series.push({ label:'Impresiones (ant.)', values: cmpImpr,  color:'#059669', dashed:true, scale:'impr'  });
-    }
-    // Human-readable caption: "Actual: 13–19 abr · Anterior: 6–12 abr"
-    function periodCaption(snaps) {
-      if (!snaps || !snaps.length) return '';
-      var first = snaps[0].label, last = snaps[snaps.length-1].label;
-      if (first === last) return formatRangeLabel(first);
-      return formatRangeLabel(first + ' → ' + last);
-    }
-    var curLbl = usingDirect ? activeRangeLbl : periodCaption(filteredSnaps());
-    var cmpLbl = utCmp.length ? periodCaption(compareSnaps()) : '';
     var captionBits = [];
-    if (curLbl) captionBits.push('<b style="color:#334155">Actual</b>: '+esc(curLbl));
-    if (cmpLbl) captionBits.push('<b style="color:#94A3B8">Anterior</b>: '+esc(cmpLbl));
+    if (activeRangeLbl) captionBits.push('<b style="color:#334155">Actual</b>: '+esc(activeRangeLbl));
     var html = '<div class="panel" style="padding:1rem 1.2rem 0.6rem;margin-bottom:12px">';
     if (labels.length >= 1) html += svgLineChart(labels, series, { height:200, primaryScale:'impr' });
     if (captionBits.length) {
       html += '<p style="font-size:10px;color:#64748B;padding:2px 0 2px;margin:0">'+captionBits.join(' &nbsp;·&nbsp; ')+'</p>';
-    }
-    if (!usingDirect) {
-      html += '<p style="font-size:10px;color:#94A3B8;padding:0 0 6px;margin:0">Cada punto es un agregado semanal · conecta GSC para ver datos diarios por URL.</p>';
     }
     html += '<div style="display:flex;align-items:center;gap:10px;padding:4px 0 6px">'+
       '<span style="font-size:10px;color:#E85249;font-weight:600">'+esc(shortURL(S.overviewFocusUrl))+'</span>'+
@@ -1080,7 +741,7 @@ function buildHTML(){
     { id:'oportunidades',  label:'Oportunidades',    group:'Análisis', hi:true },
     { id:'ideas',          label:'Ideas',            group:'Acciones' },
     { id:'configuración',  label:'Configuración',    group:'Configuración' }
-  ].filter(function(t){ return !t.req2 || (usingDirect ? !!S.gscCompareData : S.snapshots.length > 1); });
+  ];
 
   // ── SIDEBAR ──
   var prevGroup='';
@@ -1095,7 +756,6 @@ function buildHTML(){
     var cls = 's-item'+(active?' active':'')+(t.hi?' hi':'');
     return groupHtml+'<button class="'+cls+'" onclick="S.tab=\''+t.id+'\';render()">'+
       (ICONS[t.id]||'')+'<span>'+t.label+'</span>'+
-      (t.id==='snapshots'&&S.snapshots.length?'<span class="s-num has">'+S.snapshots.length+'</span>':'')+
       (t.id==='oportunidades'?'<span class="s-num has">!</span>':'')+
     '</button>';
   }).join('');
@@ -1113,37 +773,16 @@ function buildHTML(){
             'GSC conectado</div>'
         : S.gscStatus==='loading'
           ? '<div style="font-size:10px;color:#94A3B8;padding:5px 8px">Cargando GSC…</div>'
-          : '<button class="s-item" onclick="S.tab=\'configuración\';render()" style="width:100%;margin:0;color:#64748B">'+
+          : '<button class="s-item" onclick="connectGSC()" style="width:100%;margin:0;color:#64748B">'+
               '<svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'+
               'Conectar GSC'+
             '</button>')+
-      (S.driveStatus==='connected'
-        ? '<div style="font-size:10px;color:#60A5FA;font-weight:600;padding:5px 8px;background:rgba(96,165,250,.1);border-radius:6px;display:flex;align-items:center;gap:5px">'+
-            '<svg viewBox="0 0 24 24" style="width:10px;height:10px;fill:none;stroke:currentColor;stroke-width:2.5"><polyline points="20 6 9 17 4 12"/></svg>'+
-            'Drive conectado</div>'
-        : '')+
     '</div>'+
   '</aside>';
 
   // ── TOPBAR ──
   var tabLabel = (TABS_DEF.find(function(t){return t.id===S.tab;})||{label:S.tab}).label;
 
-  // Period badge — non-interactive, shown in topbar as context
-  var periodBadge = '';
-  if(S.snapshots.length > 0 && S.curIdx !== null){
-    var curLbl = S.snapshots[S.curIdx] ? S.snapshots[S.curIdx].label : '';
-    periodBadge = '<span style="font-size:11px;font-weight:600;color:var(--brand);background:var(--brand-soft);padding:3px 10px;border-radius:20px">'+esc(curLbl)+'</span>';
-  }
-
-  var periodSelect = '';
-  if(S.snapshots.length > 1){
-    var opts=S.snapshots.map(function(s,i){return'<option value="'+i+'"'+(i===S.curIdx?' selected':'')+'>'+esc(s.label)+'</option>';}).join('');
-    periodSelect='<select class="period-select" onchange="S.curIdx=parseInt(this.value);render()">'+opts+'</select>';
-  }
-
-  var refreshBtn = S.driveStatus==='connected'
-    ? '<button class="btn success btn-sm" onclick="refreshFromDrive()" '+(S.refreshing?'disabled':'')+'>'+(S.refreshing?'<span class="spinning">↻</span> Actualizando':'↻ Drive')+'</button>'
-    : '';
   var gscBtn = S.gscStatus==='connected' && S.gscSiteUrl
     ? '<button class="btn btn-sm" style="background:#059669;color:#fff;border-color:#059669" onclick="fetchGSCData()" '+(S.gscLoading?'disabled':'')+'>'+(S.gscLoading?'<span class="spinning">↻</span> Cargando':'↻ GSC')+'</button>'
     : '';
@@ -1170,17 +809,39 @@ function buildHTML(){
     ? dateFilterBtn + compareBadge
     : '';
 
+  // Freshness indicator: shows the last data date GSC returned and the lag from today.
+  var freshnessBadge = '';
+  if (hasData && S.gscData && S.gscData.grafico && S.gscData.grafico.length) {
+    var lastFecha = '';
+    S.gscData.grafico.forEach(function(r){
+      var f = (r.Fecha||'').slice(0,10);
+      if (f && f > lastFecha) lastFecha = f;
+    });
+    if (lastFecha) {
+      var today = new Date(); today.setHours(0,0,0,0);
+      var lastD = new Date(lastFecha + 'T00:00:00');
+      var lagDays = Math.max(0, Math.round((today - lastD) / 86400000));
+      var lastShort = (function(d){
+        var p = d.split('-'); var dd = parseInt(p[2]); var mIdx = parseInt(p[1])-1;
+        return dd + ' ' + MONTHS_ES[mIdx];
+      })(lastFecha);
+      freshnessBadge = '<span style="font-size:10px;color:#64748B;background:#F1F5F9;border:1px solid #E2E8F0;border-radius:20px;padding:3px 9px" '+
+        'title="GSC tiene 2-3 días de retraso natural sobre la fecha de hoy">'+
+        '📅 Datos hasta: <b style="color:#334155">'+lastShort+'</b>'+
+        (lagDays > 0 ? ' · '+lagDays+' día'+(lagDays===1?'':'s')+' atrás' : ' · hoy')+
+        '</span>';
+    }
+  }
+
   var topbar = '<div class="topbar">'+
     '<div class="topbar-left">'+
       '<span class="topbar-sep">|</span>'+
       '<span class="topbar-title">'+esc(tabLabel)+'</span>'+
-      (S.refreshing?'<span style="font-size:11px;color:var(--muted)">Sincronizando...</span>':'')+
     '</div>'+
     '<div class="topbar-right">'+
       topbarFilters+
+      freshnessBadge+
       gscBtn+
-      refreshBtn+
-      (S.driveStatus==='connected'?'<button class="btn btn-sm" onclick="disconnectDrive()">✕ Drive</button>':'')+
     '</div>'+
   '</div>';
 
@@ -1198,7 +859,7 @@ function buildHTML(){
   }
 
   // ── SIN DATOS — pantalla de bienvenida ──
-  if(!hasData && S.tab !== 'configuración' && S.tab !== 'snapshots'){
+  if(!hasData && S.tab !== 'configuración'){
     var connectBlock = S.gscStatus === 'connected'
       ? '<button onclick="fetchGSCData()" style="display:inline-flex;align-items:center;gap:10px;background:#E85249;color:#fff;border:none;border-radius:12px;padding:14px 32px;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(232,82,73,.35)">'+
           '<svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:none;stroke:#fff;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="3" x2="12" y2="21"/></svg>'+
@@ -1211,31 +872,18 @@ function buildHTML(){
         '</button>';
 
     content =
-      '<div id="drop-zone" style="min-height:calc(100vh - 56px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;padding:2rem;box-sizing:border-box"'+
-        ' ondragover="event.preventDefault();this.style.background=\'#EFF6FF\'" ondragleave="this.style.background=\'\'" ondrop="event.preventDefault();this.style.background=\'\';processFiles(event.dataTransfer.files)">'+
-
-        '<!-- icon -->'+
+      '<div style="min-height:calc(100vh - 56px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;padding:2rem;box-sizing:border-box">'+
         '<div style="width:72px;height:72px;background:linear-gradient(135deg,#E85249,#C0342D);border-radius:20px;display:flex;align-items:center;justify-content:center;margin-bottom:1.5rem;box-shadow:0 8px 24px rgba(232,82,73,.3)">'+
           '<svg viewBox="0 0 24 24" style="width:36px;height:36px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>'+
         '</div>'+
-
         '<h1 style="font-size:28px;font-weight:800;color:#0F172A;margin:0 0 10px;text-align:center;letter-spacing:-.5px">Content <span style="color:#E85249">SEO</span> Booster</h1>'+
         '<p style="font-size:15px;color:#64748B;margin:0 0 2.5rem;text-align:center;max-width:400px;line-height:1.6">'+
           'Conecta tu cuenta de Google para importar<br>datos de Search Console automáticamente.'+
         '</p>'+
-
         connectBlock+
-
-        '<div style="margin-top:2rem;display:flex;align-items:center;gap:12px;width:100%;max-width:340px">'+
-          '<div style="flex:1;height:1px;background:#E2E8F0"></div>'+
-          '<span style="font-size:11px;color:#94A3B8;font-weight:600">O sube CSVs manualmente</span>'+
-          '<div style="flex:1;height:1px;background:#E2E8F0"></div>'+
-        '</div>'+
-
-        '<button onclick="document.getElementById(\'fi\').click()" style="margin-top:1rem;background:none;border:1.5px dashed #CBD5E1;border-radius:10px;padding:12px 28px;font-size:13px;color:#64748B;cursor:pointer;font-weight:500">'+
-          '↑ Subir archivos CSV de GSC'+
-        '</button>'+
-        '<input type="file" id="fi" multiple accept=".csv" style="display:none">'+
+        '<p style="margin-top:1.6rem;font-size:11px;color:#94A3B8;text-align:center;max-width:340px">'+
+          'GSC tiene 2-3 días de retraso natural sobre la fecha de hoy.'+
+        '</p>'+
       '</div>';
 
     return '<div class="shell">'+sidebar+'<main class="main" style="display:flex;flex-direction:column">'+topbar+content+'</main></div>';
@@ -1244,9 +892,6 @@ function buildHTML(){
   // ── CONFIGURACIÓN ──
   if(S.tab==='configuración'){
 
-    var weekOptions = [4,8,12,16].map(function(w){
-      return '<option value="'+w+'"'+(w===S.gscWeeks?' selected':'')+'>Últimas '+w+' semanas</option>';
-    }).join('');
     var gscSiteOptions = S.gscSites.map(function(s){
       return '<option value="'+esc(s)+'"'+(s===S.gscSiteUrl?' selected':'')+'>'+esc(s)+'</option>';
     }).join('');
@@ -1260,7 +905,7 @@ function buildHTML(){
             '<svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:none;stroke:#059669;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round"><polyline points="20 6 9 17 4 12"/></svg>'+
           '</div>'+
           '<div><div style="font-weight:700;font-size:15px">Conectado a Google Search Console</div>'+
-          '<div style="font-size:12px;color:#64748B">Los datos se importan directamente — sin CSVs</div></div>'+
+          '<div style="font-size:12px;color:#64748B">Los datos se traen directamente desde la API de GSC.</div></div>'+
         '</div>'+
 
         (S.gscSites.length > 0
@@ -1274,7 +919,7 @@ function buildHTML(){
           : '') +
 
         '<div style="margin-top:0.5rem">'+
-          '<button class="btn btn-sm" style="color:#94A3B8" onclick="disconnectDrive();S.gscStatus=\'disconnected\';S.gscSites=[];render()">Desconectar</button>'+
+          '<button class="btn btn-sm" style="color:#94A3B8" onclick="disconnectGSC()">Desconectar</button>'+
         '</div>'+
       '</div>';
 
@@ -1288,7 +933,7 @@ function buildHTML(){
         '<details style="margin-bottom:1.2rem;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:12px 16px">'+
           '<summary style="cursor:pointer;font-weight:600;font-size:13px;color:#334155;list-style:none">▶ ¿Cómo obtener el Client ID? (3 pasos)</summary>'+
           '<div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">'+
-            '<div class="step"><div class="step-num">1</div><div class="step-body">Ve a <a href="https://console.cloud.google.com" target="_blank" style="color:var(--brand)">console.cloud.google.com</a> → crea un proyecto → activa la <b>Search Console API</b> y la <b>Drive API</b>.</div></div>'+
+            '<div class="step"><div class="step-num">1</div><div class="step-body">Ve a <a href="https://console.cloud.google.com" target="_blank" style="color:var(--brand)">console.cloud.google.com</a> → crea un proyecto → activa la <b>Search Console API</b>.</div></div>'+
             '<div class="step"><div class="step-num">2</div><div class="step-body">Credenciales → Crear → <b>ID de cliente OAuth 2.0</b> → tipo: <b>Aplicación web</b>.<br>En "Orígenes autorizados" agrega <code>https://jorgeluis666.github.io</code></div></div>'+
             '<div class="step"><div class="step-num">3</div><div class="step-body">Copia el Client ID y pégalo abajo.</div></div>'+
           '</div>'+
@@ -1307,52 +952,19 @@ function buildHTML(){
           '<svg viewBox="0 0 24 24" style="width:26px;height:26px;fill:none;stroke:#E85249;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'+
         '</div>'+
         '<div style="font-weight:700;font-size:16px;margin-bottom:6px">Importar desde Search Console</div>'+
-        '<div style="font-size:13px;color:#64748B;margin-bottom:1.8rem">Conecta tu cuenta de Google para importar<br>los datos de GSC directamente al dashboard</div>'+
+        '<div style="font-size:13px;color:#64748B;margin-bottom:1.8rem">Conecta tu cuenta de Google para traer los<br>datos de GSC directamente al dashboard.</div>'+
         '<button onclick="connectGSC()" style="display:inline-flex;align-items:center;gap:10px;background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:12px 24px;font-size:14px;font-weight:600;color:#334155;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.08)" '+(S.gscStatus==='loading'?'disabled':'')+'>'+
           (S.gscStatus==='loading'
             ? '<span class="spinning" style="font-size:16px">↻</span> Cargando…'
             : '<svg viewBox="0 0 24 24" style="width:20px;height:20px"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>'+
               'Conectar con Google') +
         '</button>'+
-        '<div style="margin-top:1.4rem">'+
-          '<details style="display:inline-block;text-align:left">'+
-            '<summary style="cursor:pointer;font-size:11px;color:#94A3B8;list-style:none">ℹ Semanas a importar</summary>'+
-            '<div style="margin-top:8px;display:flex;gap:8px;align-items:center">'+
-              '<select id="cfg-gscweeks" style="padding:6px 10px;border:1px solid #E2E8F0;border-radius:6px;font-size:12px">'+weekOptions+'</select>'+
-              '<button class="btn btn-sm" onclick="saveConfig()">Guardar</button>'+
-            '</div>'+
-          '</details>'+
-        '</div>'+
       '</div>';
     }
-
-    // ── Drive (colapsado al final) ──
-    content +=
-    '<details style="margin-top:1rem" '+(S.folderId?'open':'')+'>'+
-      '<summary style="cursor:pointer;padding:12px 16px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;font-size:13px;font-weight:600;color:#64748B;list-style:none">'+
-        '📁 Alternativa: Google Drive (importar CSVs)'+
-      '</summary>'+
-      '<div class="setup-card" style="margin-top:6px;border-radius:8px">'+
-        '<p class="desc">Sube los exports CSV de GSC a una carpeta de Drive y el dashboard los detecta automáticamente.</p>'+
-        '<label style="font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">ID de la carpeta en Drive</label>'+
-        '<div style="display:flex;gap:8px;margin-bottom:10px">'+
-          '<input id="cfg-folderid" value="'+esc(S.folderId)+'" placeholder="Pega el ID de la carpeta…" style="flex:1">'+
-          '<button class="btn primary" onclick="saveConfig()">Guardar</button>'+
-          (S.clientId&&S.folderId ? '<button class="btn success" onclick="connectDrive()">'+(S.driveStatus==='connected'?'✓ Conectado':'Conectar Drive')+'</button>' : '')+
-        '</div>'+
-        '<div style="background:#F1F5F9;border-radius:6px;padding:.8rem;font-family:monospace;font-size:11px;color:#64748B;line-height:1.8">'+
-          '📁 GSC-Lima-Retail/<br>'+
-          '&nbsp;&nbsp;📄 2026-W14_Consultas.csv<br>'+
-          '&nbsp;&nbsp;📄 2026-W14_Páginas.csv<br>'+
-          '&nbsp;&nbsp;📄 2026-W14_Gráfico.csv  …'+
-        '</div>'+
-      '</div>'+
-    '</details>';
 
     return '<div class="shell">'+sidebar+'<main class="main">'+topbar+'<div class="content">'+content+'</div></main></div>';
   }
 
-  // cur/prev already reflect the date filter (aggregated when in snapshot mode)
   var curM  = (cur  ? calcM(cur)  : null) || { clics: 0, impr: 0, ctr: 0, pos: 0 };
   var prevM = prev ? calcM(prev) : null;
 
@@ -1495,23 +1107,8 @@ function buildHTML(){
     var ovSec = S.overviewSection || 'top';
 
     // ── Chart data ──
-    // Prefer daily granularity whenever grafico rows are available. Fall back to
-    // one-point-per-snapshot (buildTrendData) only when no grafico data exists.
-    function trendFromSnaps(snaps) {
-      if (!snaps || !snaps.length) return [];
-      var allRows = [];
-      snaps.forEach(function(s){
-        if (s && s.data && s.data.grafico && s.data.grafico.length) {
-          allRows = allRows.concat(s.data.grafico);
-        }
-      });
-      var daily = aggregateByDay(allRows);
-      return (daily.length >= 1) ? daily : buildTrendData(snaps);
-    }
-    var td  = usingDirect ? aggregateByDay(S.gscData.grafico || []) : trendFromSnaps(filteredSnaps());
-    var ctd = usingDirect
-      ? (S.gscCompareData ? aggregateByDay(S.gscCompareData.grafico || []) : [])
-      : (compareSnaps().length ? trendFromSnaps(compareSnaps()) : []);
+    var td  = aggregateByDay((S.gscData && S.gscData.grafico) || []);
+    var ctd = (S.gscCompareData ? aggregateByDay(S.gscCompareData.grafico || []) : []);
 
     // ── Large section cards ──
     function secCard(key, color, iconPath, label, statVal, desc) {
@@ -1540,7 +1137,7 @@ function buildHTML(){
     content += secCard('top', '#EAB308',
       '<line x1="18" y1="20" x2="18" y2="4"/><line x1="12" y1="20" x2="12" y2="10"/><line x1="6" y1="20" x2="6" y2="14"/>',
       'Todas las páginas', fmtK(curM.clics)+' clics',
-      pages.length+' páginas · '+(usingDirect ? activeRangeLbl : 'período actual'));
+      pages.length+' páginas · '+activeRangeLbl);
     content += secCard('gained', '#059669',
       '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
       'Crecimiento', prev ? (topGainClics.length ? '+'+topGainClics.length : '—') : '—',
@@ -1558,59 +1155,24 @@ function buildHTML(){
 
       // URL-focus mode (lupa pressed) — applies to any section
       if (hasFocus) {
-        if (usingDirect && !S.overviewFocusData) {
+        if (!S.overviewFocusData) {
           fetchURLFocus(S.overviewFocusUrl);
           content += '<div class="panel" style="padding:1rem 1.2rem 0.6rem"><p style="font-size:10px;color:#aaa;padding:4px 0 6px">Cargando tendencia de URL…</p></div>';
           return;
         }
-        // Position-aligned overlay (GSC-style): day-1 of current overlays day-1
-        // of compare, etc. Solid = actual, dashed = anterior, same color per
-        // metric.
-        var utCur, utCmp = [];
-        if (usingDirect) {
-          utCur = aggregateByDay(S.overviewFocusData || []);
-        } else {
-          utCur = buildURLTrend(S.overviewFocusUrl, filteredSnaps());
-          if (compareOn && typeof compareSnaps === 'function') {
-            var cs = compareSnaps();
-            if (cs.length) utCmp = buildURLTrend(S.overviewFocusUrl, cs);
-          }
-        }
+        var utCur = aggregateByDay(S.overviewFocusData || []);
         if (!utCur.length) return;
-        var maxLen = Math.max(utCur.length, utCmp.length);
-        function alignEnd(arr, len) { var a = arr.slice(); while (a.length < len) a.unshift(null); return a; }
-        var curClics = alignEnd(utCur.map(function(d){ return d.clics; }), maxLen);
-        var curImpr  = alignEnd(utCur.map(function(d){ return d.impr;  }), maxLen);
-        var cmpClics = alignEnd(utCmp.map(function(d){ return d.clics; }), maxLen);
-        var cmpImpr  = alignEnd(utCmp.map(function(d){ return d.impr;  }), maxLen);
-        var fLabels = [];
-        for (var iF = 0; iF < maxLen; iF++) fLabels.push(String(iF + 1));
+        var fLabels = utCur.map(function(d){ return d.label; });
         var fSeries = [
-          { label:'Clics',        values: curClics, color:'#E85249', scale:'clics' },
-          { label:'Impresiones',  values: curImpr,  color:'#059669', scale:'impr'  }
+          { label:'Clics',        values: utCur.map(function(d){ return d.clics; }), color:'#E85249', scale:'clics' },
+          { label:'Impresiones',  values: utCur.map(function(d){ return d.impr;  }), color:'#059669', scale:'impr'  }
         ];
-        if (utCmp.length) {
-          fSeries.push({ label:'Clics (ant.)',       values: cmpClics, color:'#E85249', dashed:true, scale:'clics' });
-          fSeries.push({ label:'Impresiones (ant.)', values: cmpImpr,  color:'#059669', dashed:true, scale:'impr'  });
-        }
-        function periodCaption(snaps) {
-          if (!snaps || !snaps.length) return '';
-          var first = snaps[0].label, last = snaps[snaps.length-1].label;
-          if (first === last) return formatRangeLabel(first);
-          return formatRangeLabel(first + ' → ' + last);
-        }
-        var curLbl = usingDirect ? activeRangeLbl : periodCaption(filteredSnaps());
-        var cmpLbl = utCmp.length ? periodCaption(compareSnaps()) : '';
         var captionBits = [];
-        if (curLbl) captionBits.push('<b style="color:#334155">Actual</b>: '+esc(curLbl));
-        if (cmpLbl) captionBits.push('<b style="color:#94A3B8">Anterior</b>: '+esc(cmpLbl));
+        if (activeRangeLbl) captionBits.push('<b style="color:#334155">Actual</b>: '+esc(activeRangeLbl));
         content += '<div class="panel" style="padding:1rem 1.2rem 0.6rem">';
         if (fLabels.length >= 1) content += svgLineChart(fLabels, fSeries, { height:200, primaryScale:'impr' });
         if (captionBits.length) {
           content += '<p style="font-size:10px;color:#64748B;padding:2px 0 2px;margin:0">'+captionBits.join(' &nbsp;·&nbsp; ')+'</p>';
-        }
-        if (!usingDirect) {
-          content += '<p style="font-size:10px;color:#94A3B8;padding:0 0 6px;margin:0">Cada punto es un agregado semanal · conecta GSC para ver datos diarios por URL.</p>';
         }
         content += '<div style="display:flex;align-items:center;gap:10px;padding:4px 0 6px">'+
           '<span style="font-size:10px;color:#E85249;font-weight:600">'+esc(shortURL(S.overviewFocusUrl))+'</span>'+
@@ -1922,7 +1484,7 @@ function buildHTML(){
     content += '<p class="sec-lbl">A · Temas con demanda que el sitio aún no cubre bien' +
       '<span style="font-size:10px;font-weight:400;color:#aaa"> — impresiones altas, posición > 20, 0 clics</span></p>';
     if(!clusterIdeas.length){
-      content += '<div class="insight info">Sin datos suficientes. Carga más snapshots.</div>';
+      content += '<div class="insight info">Sin datos suficientes para comparar.</div>';
     } else {
       content += '<div class="panel-table"><table>' +
         '<thead><tr><th>Consulta detectada</th><th class="r">Impr.</th><th class="r">Pos.</th><th>Idea de artículo</th><th>Apunta a</th></tr></thead><tbody>';
@@ -2047,16 +1609,6 @@ function buildHTML(){
     content+='<p style="font-size:10px;color:#aaa;margin-top:6px"><span class="dot dot-red"></span>páginas de servicio</p>';
   }
 
-  // ── SNAPSHOTS ──
-  if(S.tab==='snapshots'){
-    content+='<p style="font-size:11px;color:#888;margin-bottom:10px">'+S.snapshots.length+' períodos cargados. '+(S.driveStatus==='connected'?'Pulsa "Actualizar datos" para importar períodos nuevos de Drive.':'Conecta Drive para sincronización automática.')+'</p>';
-    content+=S.snapshots.map(function(s,i){var m=calcM(s);var isDrive=!!s.driveFolder;return'<div class="snap-item'+(i===S.curIdx?' active':'')+'"><div style="display:flex;align-items:center;gap:14px"><div><div class="snap-name'+(i===S.curIdx?' active':'')+'">'+esc(s.label)+(isDrive?' <span style="font-size:10px;color:#888">· Drive</span>':'')+'</div><div class="snap-meta">'+new Date(s.date).toLocaleDateString('es-PE',{day:'numeric',month:'short',year:'numeric'})+(m?' · '+Math.round(m.clics).toLocaleString()+' clics · pos '+m.pos.toFixed(1):'')+'</div></div></div><div style="display:flex;gap:6px"><button onclick="S.curIdx='+i+';S.tab=\'overview\';render()">Ver</button><button class="danger" onclick="deleteSnap('+i+')">Eliminar</button></div></div>';}).join('');
-    content+='<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid #eee;display:flex;gap:8px;flex-wrap:wrap">'+
-      (S.driveStatus==='connected'?'<button class="success" onclick="refreshFromDrive()">↻ Actualizar datos desde Drive</button>':'')+
-      '<button onclick="document.getElementById(\'fi-snap\').click()">↑ Agregar CSV manual</button>'+
-      '<input type="file" id="fi-snap" multiple accept=".csv" style="display:none"></div>';
-  }
-
   var dateModal = '';
   if (S.showDateModal) {
     var mt  = S.modalTab || 'filtrar';
@@ -2128,13 +1680,6 @@ function buildHTML(){
 
 // ── BIND EVENTS ──────────────────────────────────────────
 function bindEvents(){
-  var dz = document.getElementById('drop-zone');
-  if(dz){
-    dz.onclick = function(){ document.getElementById('fi').click(); };
-    dz.ondragover = function(e){ e.preventDefault(); dz.classList.add('drag'); };
-    dz.ondragleave = function(){ dz.classList.remove('drag'); };
-    dz.ondrop = function(e){ e.preventDefault(); dz.classList.remove('drag'); processFiles(e.dataTransfer.files); };
-  }
   document.querySelectorAll('.note-btn').forEach(function(btn){
     btn.onclick = function(){
       var idx  = parseInt(this.getAttribute('data-idx'));
@@ -2144,26 +1689,34 @@ function bindEvents(){
       if(txt && txt.value.trim()) addNote(idx, txt.value.trim(), dt ? dt.value : '');
     };
   });
-  ['fi','fi-snap','fi2'].forEach(function(id){
-    var el=document.getElementById(id);
-    if(el)el.onchange=function(){processFiles(this.files);this.value='';};
-  });
   var qf=document.getElementById('q-filter');
   if(qf){qf.oninput=function(){S.qFilter=this.value;render();};qf.focus();}
 }
 
 function saveConfig(){
   var cid  = document.getElementById('cfg-clientid');
-  var fid  = document.getElementById('cfg-folderid');
-  var gsw  = document.getElementById('cfg-gscweeks');
   var gss  = document.getElementById('cfg-gscsite');
   if(cid)  S.clientId   = cid.value.trim();
-  if(fid)  S.folderId   = fid.value.trim();
-  if(gsw)  S.gscWeeks   = parseInt(gsw.value) || 8;
   if(gss)  S.gscSiteUrl = gss.value;
   saveState();
   toast('✓ Configuración guardada');
   render();
+}
+
+function disconnectGSC(){
+  if (S.accessToken && typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
+    google.accounts.oauth2.revoke(S.accessToken, function(){});
+  }
+  S.accessToken = null;
+  S.gscStatus = 'disconnected';
+  S.gscSites = [];
+  S.gscData = null;
+  S.gscCompareData = null;
+  S.overviewFocusUrl = null;
+  S.overviewFocusData = null;
+  saveState();
+  render();
+  toast('Desconectado de Google Search Console');
 }
 
 // ── INIT ─────────────────────────────────────────────────
