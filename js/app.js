@@ -166,6 +166,27 @@ function aggregateByWeek(rows) {
     return { label: wk, clics: b.clics, impr: b.impr, pos: b.cnt ? b.posSum / b.cnt : 0 };
   });
 }
+
+// Aggregate rows by day (one row per Fecha). Used for the Overview trend chart
+// so the X-axis shows every calendar day instead of weekly buckets.
+function aggregateByDay(rows) {
+  if (!rows || !rows.length) return [];
+  var buckets = {};
+  rows.forEach(function(r) {
+    var fecha = r['Fecha'] || '';
+    if (!fecha) return;
+    var d = fecha.slice(0, 10);
+    if (!buckets[d]) buckets[d] = { label: d, clics: 0, impr: 0, posSum: 0, cnt: 0 };
+    buckets[d].clics += pN(r.Clics);
+    buckets[d].impr  += pN(r.Impresiones);
+    var pos = pP(r['Posición']);
+    if (pos > 0) { buckets[d].posSum += pos; buckets[d].cnt++; }
+  });
+  return Object.keys(buckets).sort().map(function(d) {
+    var b = buckets[d];
+    return { label: d, clics: b.clics, impr: b.impr, pos: b.cnt ? b.posSum / b.cnt : 0 };
+  });
+}
 // Aggregate snapshots into a single virtual snapshot (paginas, consultas, grafico, dispositivos, paises)
 // This makes the date filter the principal node: KPI cards, tables and rankings respect the chosen range.
 function aggregateSnapsData(snaps) {
@@ -416,10 +437,24 @@ function weekLabelToShort(label) {
   return mon.getDate() + ' ' + MONTHS_ES[mon.getMonth()];
 }
 
+function dayLabelToShort(label) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(label);
+  if (!m) return label;
+  var day = parseInt(m[3], 10), monIdx = parseInt(m[2], 10) - 1;
+  return day + ' ' + (MONTHS_ES[monIdx] || '');
+}
+
+function xAxisLabelShort(label) {
+  if (/^\d{4}-W\d{2}$/.test(label)) return weekLabelToShort(label);
+  if (/^\d{4}-\d{2}-\d{2}/.test(label)) return dayLabelToShort(label);
+  return label;
+}
+
 function svgLineChart(labels, series, opts) {
   opts = opts || {};
   var W = 860, H = opts.height || 180;
-  var padL = 52, padR = opts.yRightLabel ? 52 : 16, padT = 14, padB = 38;
+  // padT gives room for the legend at the top; padB only needs space for X-axis labels.
+  var padL = 52, padR = opts.yRightLabel ? 52 : 16, padT = 34, padB = 46;
   var cW = W - padL - padR, cH = H - padT - padB;
   var n = labels.length;
   if (n < 2) return '';
@@ -467,13 +502,18 @@ function svgLineChart(labels, series, opts) {
     }
   }
 
-  // X axis labels — convert ISO week to "3 mar", skip every other when dense
-  var skipEvery = n > 12 ? 2 : 1;
+  // X axis labels — every point labeled. Rotate when dense so "todos los días" caben.
+  // With weeks: use horizontal; with days (>14 points): rotate -45°.
+  var rotate = n > 14;
   labels.forEach(function(lbl, i) {
-    if (i % skipEvery !== 0 && i !== n - 1) return;
     var x = xOf(i);
-    var short = weekLabelToShort(lbl);
-    svg += '<text x="'+x.toFixed(1)+'" y="'+(H-6)+'" text-anchor="middle" font-size="9" fill="#aaa">'+esc(short)+'</text>';
+    var short = xAxisLabelShort(lbl);
+    if (rotate) {
+      var tx = x.toFixed(1), ty = (H - padB + 14).toFixed(1);
+      svg += '<text x="'+tx+'" y="'+ty+'" text-anchor="end" font-size="9" fill="#888" transform="rotate(-45 '+tx+' '+ty+')">'+esc(short)+'</text>';
+    } else {
+      svg += '<text x="'+x.toFixed(1)+'" y="'+(H-padB+18)+'" text-anchor="middle" font-size="9" fill="#888">'+esc(short)+'</text>';
+    }
   });
 
   // Draw series
@@ -518,12 +558,13 @@ function svgLineChart(labels, series, opts) {
   svg += '<line x1="'+padL+'" y1="'+padT+'" x2="'+padL+'" y2="'+(padT+cH)+'" stroke="#ccc" stroke-width="1"/>';
   svg += '<line x1="'+padL+'" y1="'+(padT+cH)+'" x2="'+(padL+cW)+'" y2="'+(padT+cH)+'" stroke="#ccc" stroke-width="1"/>';
 
-  // Legend
+  // Legend — placed at the top of the chart, above the plot area.
   var legX = padL;
+  var legY = 10;
   series.forEach(function(s) {
-    svg += '<rect x="'+legX+'" y="'+(H-padB+20)+'" width="10" height="3" rx="1" fill="'+s.color+'"'+(s.dashed?' stroke="'+s.color+'" stroke-dasharray="3,2"':'')+'/>';
-    svg += '<text x="'+(legX+14)+'" y="'+(H-padB+24)+'" font-size="9" fill="#888">'+esc(s.label)+'</text>';
-    legX += s.label.length * 6 + 24;
+    svg += '<rect x="'+legX+'" y="'+legY+'" width="12" height="3" rx="1" fill="'+s.color+'"'+(s.dashed?' stroke="'+s.color+'" stroke-dasharray="3,2"':'')+'/>';
+    svg += '<text x="'+(legX+16)+'" y="'+(legY+4)+'" font-size="10" font-weight="600" fill="#555">'+esc(s.label)+'</text>';
+    legX += s.label.length * 6.2 + 28;
   });
 
   svg += '</svg>';
@@ -907,7 +948,7 @@ function buildHTML(){
       fetchURLFocus(S.overviewFocusUrl);
       return '<div class="panel" style="padding:1rem 1.2rem 0.6rem;margin-bottom:12px"><p style="font-size:10px;color:#aaa;padding:4px 0 6px">Cargando tendencia de URL…</p></div>';
     }
-    var focusRows = usingDirect ? aggregateByWeek(S.overviewFocusData || []) : [];
+    var focusRows = usingDirect ? aggregateByDay(S.overviewFocusData || []) : [];
     var ut = usingDirect ? focusRows : buildURLTrend(S.overviewFocusUrl, filteredSnaps());
     if (!ut.length) return '';
     var labels = ut.map(function(d){ return d.label; });
@@ -1346,9 +1387,9 @@ function buildHTML(){
     var ovSec = S.overviewSection || 'top';
 
     // ── Chart data ──
-    var td = usingDirect ? aggregateByWeek(S.gscData.grafico || []) : buildTrendData(filteredSnaps());
+    var td = usingDirect ? aggregateByDay(S.gscData.grafico || []) : buildTrendData(filteredSnaps());
     var ctd = usingDirect
-      ? (S.gscCompareData ? aggregateByWeek(S.gscCompareData.grafico || []) : [])
+      ? (S.gscCompareData ? aggregateByDay(S.gscCompareData.grafico || []) : [])
       : (compareSnaps().length ? buildTrendData(compareSnaps()) : []);
 
     // ── Large section cards ──
@@ -1401,7 +1442,7 @@ function buildHTML(){
           content += '<div class="panel" style="padding:1rem 1.2rem 0.6rem"><p style="font-size:10px;color:#aaa;padding:4px 0 6px">Cargando tendencia de URL…</p></div>';
           return;
         }
-        var focusRows = usingDirect ? aggregateByWeek(S.overviewFocusData || []) : [];
+        var focusRows = usingDirect ? aggregateByDay(S.overviewFocusData || []) : [];
         var ut = usingDirect ? focusRows : buildURLTrend(S.overviewFocusUrl, filteredSnaps());
         if (!ut.length) return;
         var fLabels = ut.map(function(d){ return d.label; });
