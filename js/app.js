@@ -166,6 +166,49 @@ function aggregateByWeek(rows) {
     return { label: wk, clics: b.clics, impr: b.impr, pos: b.cnt ? b.posSum / b.cnt : 0 };
   });
 }
+// Aggregate snapshots into a single virtual snapshot (paginas, consultas, grafico, dispositivos, paises)
+// This makes the date filter the principal node: KPI cards, tables and rankings respect the chosen range.
+function aggregateSnapsData(snaps) {
+  if (!snaps || !snaps.length) return null;
+  if (snaps.length === 1) return snaps[0];
+  var firstLbl = snaps[0].label, lastLbl  = snaps[snaps.length-1].label;
+  var agg = { label: firstLbl + ' → ' + lastLbl, date: snaps[snaps.length-1].date, data: {} };
+  function aggDimension(type, keyName) {
+    var bucket = {};
+    snaps.forEach(function(s){
+      var rows = (s.data && s.data[type]) || [];
+      rows.forEach(function(r){
+        var k = r[keyName] || '';
+        if (!bucket[k]) bucket[k] = { name:k, clics:0, impr:0, posWeighted:0, weight:0 };
+        var c = pN(r.Clics), i = pN(r.Impresiones), p = pP(r['Posición']);
+        bucket[k].clics += c;
+        bucket[k].impr  += i;
+        if (p > 0 && i > 0) { bucket[k].posWeighted += p * i; bucket[k].weight += i; }
+      });
+    });
+    return Object.keys(bucket).map(function(k){
+      var v = bucket[k];
+      var ctr = v.impr ? (v.clics / v.impr * 100) : 0;
+      var pos = v.weight ? (v.posWeighted / v.weight) : 0;
+      var row = {};
+      row[keyName] = v.name;
+      row.Clics = v.clics;
+      row.Impresiones = v.impr;
+      row.CTR = ctr.toFixed(2) + '%';
+      row['Posición'] = pos.toFixed(1);
+      return row;
+    }).sort(function(a,b){ return pN(b.Clics) - pN(a.Clics); });
+  }
+  agg.data.paginas      = aggDimension('paginas',      'Páginas principales');
+  agg.data.consultas    = aggDimension('consultas',    'Consultas principales');
+  agg.data.dispositivos = aggDimension('dispositivos', 'Dispositivos');
+  agg.data.paises       = aggDimension('paises',       'Países');
+  // grafico: concatenate raw daily/weekly rows so chart reflects full range
+  var allG = [];
+  snaps.forEach(function(s){ if (s.data && s.data.grafico) allG = allG.concat(s.data.grafico); });
+  agg.data.grafico = allG;
+  return agg;
+}
 function posClass(p){return p<=10?'green':p<=20?'amber':'red';}
 function posLbl(p){return p<=10?'Pág. 1':p<=20?'Pág. 2':'Pág. '+Math.ceil(p/10);}
 function posColor(p){return p<=10?'up':p<=20?'am':'dn';}
@@ -789,13 +832,44 @@ function buildHTML(){
   var usingDirect = !!S.gscData;
   var hasSnaps = S.snapshots.length > 0;
   var hasData  = usingDirect || hasSnaps;
-  var cur  = usingDirect ? { data: S.gscData }         : S.snapshots[S.curIdx];
-  var prev = usingDirect ? (S.gscCompareData ? { data: S.gscCompareData } : null)
-                         : (S.curIdx > 0 ? S.snapshots[S.curIdx - 1] : null);
-  // Label shown in "vs ___" comparisons
-  var prevLabel = usingDirect && S.gscCompareData
-    ? ((S.gscCompareData.startDate||'') + ' – ' + (S.gscCompareData.endDate||''))
-    : (prev && prev.label ? prev.label : 'período anterior');
+  var cur, prev, prevLabel;
+  if (usingDirect) {
+    cur  = { data: S.gscData };
+    prev = S.gscCompareData ? { data: S.gscCompareData } : null;
+    prevLabel = (S.gscCompareData)
+      ? ((S.gscCompareData.startDate||'') + ' – ' + (S.gscCompareData.endDate||''))
+      : 'período anterior';
+  } else {
+    // Date filter is the principal node — aggregate all snapshots in the filtered range.
+    var fSnaps = filteredSnaps();
+    var cSnaps = (typeof compareSnaps === 'function') ? compareSnaps() : [];
+    if (fSnaps.length) {
+      cur = aggregateSnapsData(fSnaps);
+    } else {
+      cur = S.snapshots[S.curIdx] || null;
+    }
+    if (S.compareEnabled && cSnaps.length) {
+      prev = aggregateSnapsData(cSnaps);
+      prevLabel = (cSnaps[0].label || '') + (cSnaps.length>1 ? ' → '+cSnaps[cSnaps.length-1].label : '');
+    } else if (fSnaps.length > 1) {
+      // Implicit comparison: use the snapshot just before the filtered range (if any) so deltas make sense
+      var sortedAll = S.snapshots.slice().sort(function(a,b){ return a.label.localeCompare(b.label); });
+      var firstIdx = sortedAll.findIndex(function(s){ return s.label === fSnaps[0].label; });
+      if (firstIdx > 0) {
+        // Same window length immediately before
+        var preWindow = sortedAll.slice(Math.max(0, firstIdx - fSnaps.length), firstIdx);
+        prev = aggregateSnapsData(preWindow);
+        prevLabel = preWindow.length
+          ? ((preWindow[0].label||'') + (preWindow.length>1 ? ' → '+preWindow[preWindow.length-1].label : ''))
+          : 'período anterior';
+      } else {
+        prev = null; prevLabel = 'período anterior';
+      }
+    } else {
+      prev = (S.curIdx > 0 ? S.snapshots[S.curIdx - 1] : null);
+      prevLabel = (prev && prev.label) ? prev.label : 'período anterior';
+    }
+  }
 
   // ── URL FOCUS HELPERS (shared by Overview, Artículos blog, Páginas) ──
   var lupaSvg = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
@@ -1116,13 +1190,9 @@ function buildHTML(){
     return '<div class="shell">'+sidebar+'<main class="main">'+topbar+'<div class="content">'+content+'</div></main></div>';
   }
 
-  var curM = usingDirect
-    ? (calcM(cur) || { clics: 0, impr: 0, ctr: 0, pos: 0 })
-    : (calcMRange(filteredSnaps()) || { clics: 0, impr: 0, ctr: 0, pos: 0 });
-  var prevM = usingDirect
-    ? (prev ? calcM(prev) : null)
-    : (S.compareEnabled && compareSnaps().length ? calcMRange(compareSnaps())
-       : (S.curIdx > 0 ? calcM(S.snapshots[S.curIdx-1]) : null));
+  // cur/prev already reflect the date filter (aggregated when in snapshot mode)
+  var curM  = (cur  ? calcM(cur)  : null) || { clics: 0, impr: 0, ctr: 0, pos: 0 };
+  var prevM = prev ? calcM(prev) : null;
 
   // ── SHARED: date filter bar ───────────────────────────────
   // ── OVERVIEW ──
