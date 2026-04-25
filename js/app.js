@@ -1375,7 +1375,7 @@ function buildHTML(){
     }
 
     content += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px">';
-    content += secCard('top', '#D97706',
+    content += secCard('top', '#EAB308',
       '<line x1="18" y1="20" x2="18" y2="4"/><line x1="12" y1="20" x2="12" y2="10"/><line x1="6" y1="20" x2="6" y2="14"/>',
       'Todas las páginas', fmtK(curM.clics)+' clics',
       pages.length+' páginas · '+(usingDirect ? activeRangeLbl : 'período actual'));
@@ -1477,7 +1477,7 @@ function buildHTML(){
       var avgCTR = topImpr ? (topSum / topImpr * 100) : 0;
       var avgPos = topClics.length ? (topClics.reduce(function(a,r){ return a + r.pos; }, 0) / topClics.length) : 0;
       statsRow =
-        miniStat('Clics del Top '+topClics.length, Math.round(topSum).toLocaleString(), share+'% del tráfico total', '#D97706') +
+        miniStat('Clics del Top '+topClics.length, Math.round(topSum).toLocaleString(), share+'% del tráfico total', '#EAB308') +
         miniStat('Impresiones del Top', fmtK(topImpr), 'Acumulado en '+topClics.length+' páginas', '#059669') +
         miniStat('CTR promedio Top', avgCTR.toFixed(2)+'%', 'Eficiencia al convertir impresiones', '#F59E0B') +
         miniStat('Posición media Top', avgPos.toFixed(1), avgPos <= 10 ? 'Página 1 de Google' : (avgPos <= 20 ? 'Página 2' : 'Más allá de pág. 2'), '#64748B');
