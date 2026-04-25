@@ -487,7 +487,9 @@ function dayLabelToShort(label) {
 }
 
 function xAxisLabelShort(label) {
-  if (/^\d{4}-W\d{2}$/.test(label)) return weekLabelToShort(label);
+  // Weekly snapshots → show the full week range (e.g. "6–12 abr") so it's
+  // clear the point represents a 7-day aggregate, not a single calendar day.
+  if (/^\d{4}-W\d{2}$/.test(label)) return weekLabelToRange(label);
   if (/^\d{4}-\d{2}-\d{2}/.test(label)) return dayLabelToShort(label);
   return label;
 }
@@ -1034,6 +1036,10 @@ function buildHTML(){
     ];
     var html = '<div class="panel" style="padding:1rem 1.2rem 0.6rem;margin-bottom:12px">';
     if (labels.length >= 1) html += svgLineChart(labels, series, { height:200, primaryScale:'impr' });
+    var granularityNote = usingDirect
+      ? ''
+      : '<p style="font-size:10px;color:#94A3B8;padding:2px 0 6px;margin:0">Cada punto es un agregado semanal · conecta GSC para ver datos diarios por URL.</p>';
+    html += granularityNote;
     html += '<div style="display:flex;align-items:center;gap:10px;padding:4px 0 6px">'+
       '<span style="font-size:10px;color:#E85249;font-weight:600">'+esc(shortURL(S.overviewFocusUrl))+'</span>'+
       '<button onclick="S.overviewFocusUrl=null;S.overviewFocusData=null;render()" style="font-size:10px;padding:2px 8px;border:1px solid #ddd;border-radius:12px;background:transparent;cursor:pointer;color:#666">× Cerrar</button>'+
@@ -1553,6 +1559,9 @@ function buildHTML(){
         ];
         content += '<div class="panel" style="padding:1rem 1.2rem 0.6rem">';
         if (fLabels.length >= 1) content += svgLineChart(fLabels, fSeries, { height:200, primaryScale:'impr' });
+        if (!usingDirect) {
+          content += '<p style="font-size:10px;color:#94A3B8;padding:2px 0 6px;margin:0">Cada punto es un agregado semanal · conecta GSC para ver datos diarios por URL.</p>';
+        }
         content += '<div style="display:flex;align-items:center;gap:10px;padding:4px 0 6px">'+
           '<span style="font-size:10px;color:#E85249;font-weight:600">'+esc(shortURL(S.overviewFocusUrl))+'</span>'+
           '<button onclick="S.overviewFocusUrl=null;S.overviewFocusData=null;render()" style="font-size:10px;padding:2px 8px;border:1px solid #ddd;border-radius:12px;background:transparent;cursor:pointer;color:#666">× Total sitio</button>'+
