@@ -512,16 +512,38 @@ function svgLineChart(labels, series, opts) {
     return { mn: Math.min.apply(null,all), mx: Math.max.apply(null,all) };
   }
 
-  var lR = seriesRange(leftSeries);
+  // Independent left-axis scales: series sharing the same `scale` key share range.
+  // If no scale key is provided, all left series share a single "default" scale.
+  var scales = {};
+  leftSeries.forEach(function(s){
+    var k = s.scale || 'default';
+    if (!scales[k]) scales[k] = [];
+    scales[k].push(s);
+  });
+  Object.keys(scales).forEach(function(k){
+    var r = seriesRange(scales[k]);
+    // Pad top by 15% so peaks aren't glued to the frame; floor baseline at 0 when all values ≥ 0.
+    var span = r.mx - r.mn;
+    r.mn = Math.min(r.mn, 0) < 0 ? r.mn : 0;
+    r.mx = r.mx + (span * 0.15 || r.mx * 0.15 || 1);
+    if (r.mn === r.mx) r.mx = r.mn + 1;
+    scales[k] = r;
+  });
   var rR = seriesRange(rightSeries);
-  // Add 10% padding top
-  lR.mx = lR.mx + (lR.mx - lR.mn) * 0.1 || lR.mx * 1.1 || 1;
   rR.mx = rR.mx + (rR.mx - rR.mn) * 0.1 || rR.mx * 1.1 || 1;
+  // Pick which scale drives the left axis labels.
+  var primaryKey = opts.primaryScale && scales[opts.primaryScale] ? opts.primaryScale : Object.keys(scales)[0];
+  var lR = scales[primaryKey] || { mn:0, mx:1 };
 
   function toY(val, range, invert) {
     var norm = (val - range.mn) / (range.mx - range.mn || 1);
     if (invert) norm = 1 - norm;
     return padT + cH - norm * cH;
+  }
+
+  function rangeFor(s) {
+    if (s.yRight) return rR;
+    return scales[s.scale || 'default'] || lR;
   }
 
   function xOf(i) { return n === 1 ? padL + cW / 2 : padL + i / (n - 1) * cW; }
@@ -560,7 +582,7 @@ function svgLineChart(labels, series, opts) {
 
   // Draw series
   series.forEach(function(s) {
-    var range = s.yRight ? rR : lR;
+    var range = rangeFor(s);
     var invert = s.yRight && opts.invertRight;
     var pts = [];
     s.values.forEach(function(v, i) {
@@ -995,11 +1017,11 @@ function buildHTML(){
     if (!ut.length) return '';
     var labels = ut.map(function(d){ return d.label; });
     var series = [
-      { label:'Clics', values: ut.map(function(d){ return d.clics; }), color:'#E85249' },
-      { label:'Impr.', values: ut.map(function(d){ return d.impr;  }), color:'#059669', dashed:true }
+      { label:'Clics', values: ut.map(function(d){ return d.clics; }), color:'#E85249', scale:'clics' },
+      { label:'Impr.', values: ut.map(function(d){ return d.impr;  }), color:'#059669', dashed:true, scale:'impr' }
     ];
     var html = '<div class="panel" style="padding:1rem 1.2rem 0.6rem;margin-bottom:12px">';
-    if (labels.length >= 1) html += svgLineChart(labels, series, { height:200 });
+    if (labels.length >= 1) html += svgLineChart(labels, series, { height:200, primaryScale:'impr' });
     html += '<div style="display:flex;align-items:center;gap:10px;padding:4px 0 6px">'+
       '<span style="font-size:10px;color:#E85249;font-weight:600">'+esc(shortURL(S.overviewFocusUrl))+'</span>'+
       '<button onclick="S.overviewFocusUrl=null;S.overviewFocusData=null;render()" style="font-size:10px;padding:2px 8px;border:1px solid #ddd;border-radius:12px;background:transparent;cursor:pointer;color:#666">× Cerrar</button>'+
@@ -1502,11 +1524,11 @@ function buildHTML(){
         if (!ut.length) return;
         var fLabels = ut.map(function(d){ return d.label; });
         var fSeries = [
-          { label:'Clics', values: ut.map(function(d){ return d.clics; }), color:'#E85249' },
-          { label:'Impr.', values: ut.map(function(d){ return d.impr;  }), color:'#059669', dashed:true }
+          { label:'Clics', values: ut.map(function(d){ return d.clics; }), color:'#E85249', scale:'clics' },
+          { label:'Impr.', values: ut.map(function(d){ return d.impr;  }), color:'#059669', dashed:true, scale:'impr' }
         ];
         content += '<div class="panel" style="padding:1rem 1.2rem 0.6rem">';
-        if (fLabels.length >= 1) content += svgLineChart(fLabels, fSeries, { height:200 });
+        if (fLabels.length >= 1) content += svgLineChart(fLabels, fSeries, { height:200, primaryScale:'impr' });
         content += '<div style="display:flex;align-items:center;gap:10px;padding:4px 0 6px">'+
           '<span style="font-size:10px;color:#E85249;font-weight:600">'+esc(shortURL(S.overviewFocusUrl))+'</span>'+
           '<button onclick="S.overviewFocusUrl=null;S.overviewFocusData=null;render()" style="font-size:10px;padding:2px 8px;border:1px solid #ddd;border-radius:12px;background:transparent;cursor:pointer;color:#666">× Total sitio</button>'+
@@ -1522,23 +1544,23 @@ function buildHTML(){
         }
         var tLabels = td.map(function(d){ return d.label; });
         var tSeries = [
-          { label:'Clics',       values: td.map(function(d){ return d.clics; }), color:'#E85249' },
-          { label:'Impresiones', values: td.map(function(d){ return d.impr;  }), color:'#059669', dashed:true },
+          { label:'Clics',       values: td.map(function(d){ return d.clics; }), color:'#E85249', scale:'clics' },
+          { label:'Impresiones', values: td.map(function(d){ return d.impr;  }), color:'#059669', dashed:true, scale:'impr' },
           { label:'Posición',    values: td.map(function(d){ return d.pos;   }), color:'#94A3B8', yRight:true }
         ];
         if (ctd.length >= 1) {
           var maxLen = Math.max(tLabels.length, ctd.length);
           tLabels = padTo(td.map(function(d){ return d.label; }), maxLen);
           tSeries = [
-            { label:'Clics',        values: padTo(td.map(function(d){return d.clics;}),  maxLen), color:'#E85249' },
-            { label:'Impresiones',  values: padTo(td.map(function(d){return d.impr;}),   maxLen), color:'#059669', dashed:true },
-            { label:'Clics (ant.)', values: padTo(ctd.map(function(d){return d.clics;}), maxLen), color:'rgba(232,82,73,0.35)' },
-            { label:'Impr. (ant.)', values: padTo(ctd.map(function(d){return d.impr;}),  maxLen), color:'rgba(5,150,105,0.35)', dashed:true }
+            { label:'Clics',        values: padTo(td.map(function(d){return d.clics;}),  maxLen), color:'#E85249', scale:'clics' },
+            { label:'Impresiones',  values: padTo(td.map(function(d){return d.impr;}),   maxLen), color:'#059669', dashed:true, scale:'impr' },
+            { label:'Clics (ant.)', values: padTo(ctd.map(function(d){return d.clics;}), maxLen), color:'rgba(232,82,73,0.35)', scale:'clics' },
+            { label:'Impr. (ant.)', values: padTo(ctd.map(function(d){return d.impr;}),  maxLen), color:'rgba(5,150,105,0.35)', dashed:true, scale:'impr' }
           ];
         }
         content += '<div class="panel" style="padding:1rem 1.2rem 0.6rem">';
-        content += svgLineChart(tLabels, tSeries, { height:200, invertRight:true });
-        content += '<p style="font-size:10px;color:#aaa;padding:4px 0 6px">Posición: eje derecho — valores más bajos = mejor ranking</p>';
+        content += svgLineChart(tLabels, tSeries, { height:200, invertRight:true, primaryScale:'impr' });
+        content += '<p style="font-size:10px;color:#aaa;padding:4px 0 6px">Clics y Impresiones usan escalas independientes · Posición: eje derecho (valores más bajos = mejor ranking)</p>';
         content += '</div>';
         return;
       }
