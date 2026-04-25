@@ -1601,13 +1601,14 @@ function buildHTML(){
         miniStat('Peor caída', worst ? Math.round(worst.dClics).toLocaleString()+' clics' : '—', worst ? shortURL(worst.url) : 'sin datos', '#DC2626') +
         miniStat('% páginas que cayeron', lostPct+'%', withDelta.length+' páginas con datos comparables', '#DC2626');
     }
-    if (statsRow) {
-      content += '<div style="display:flex;gap:10px;margin:14px 0">'+statsRow+'</div>';
-    }
+    // statsRow se renderiza DENTRO del panel de cada sección, como encabezado.
 
     // ── Table per selected section ──
     if(ovSec==='top'){
       content += '<div class="panel" style="padding:1rem 1.2rem 0.8rem;margin-top:6px">';
+      if (statsRow) {
+        content += '<div style="display:flex;gap:10px;margin:0 0 14px">'+statsRow+'</div>';
+      }
       var pTopAll = paretoSplit(allSorted, function(r){ return r.clics; });
       if(pTopAll.count > 0 && pages.length > 0) content += paretoBadge(pTopAll.count, pages.length);
 
@@ -1651,14 +1652,24 @@ function buildHTML(){
       if(!prev){
         content += '<div class="insight info" style="margin-top:8px">Activa la comparación de período (botón de calendario arriba) para ver qué páginas están creciendo.</div>';
       } else {
+        content += '<div class="panel" style="padding:1rem 1.2rem 0.8rem;margin-top:6px">';
+        if (statsRow) {
+          content += '<div style="display:flex;gap:10px;margin:0 0 14px">'+statsRow+'</div>';
+        }
         var pGain = paretoSplit(topGainClics, function(r){ return r.dClics; });
         content += pageTable(topGainClics, true, 'promocionar', pGain.count);
+        content += '</div>';
       }
     } else if(ovSec==='lost'){
       if(!prev){
         content += '<div class="insight info" style="margin-top:8px">Activa la comparación de período (botón de calendario arriba) para ver qué páginas están cayendo.</div>';
       } else {
+        content += '<div class="panel" style="padding:1rem 1.2rem 0.8rem;margin-top:6px">';
+        if (statsRow) {
+          content += '<div style="display:flex;gap:10px;margin:0 0 14px">'+statsRow+'</div>';
+        }
         content += pageTable(topDropClics, true, 'optimizar');
+        content += '</div>';
       }
     }
   }
