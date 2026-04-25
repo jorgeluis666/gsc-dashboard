@@ -848,10 +848,11 @@ function buildHTML(){
 
   // ── SIDEBAR ──
   var prevGroup='';
+  var hiddenGroups = { 'Acciones':1, 'Configuración':1 };
   var sidebarItems = TABS_DEF.map(function(t){
     var groupHtml = '';
     if(t.group !== prevGroup){
-      groupHtml = '<div class="s-group-lbl">'+t.group+'</div>';
+      if(!hiddenGroups[t.group]) groupHtml = '<div class="s-group-lbl">'+t.group+'</div>';
       prevGroup = t.group;
     }
     var active = S.tab === t.id;
