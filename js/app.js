@@ -732,8 +732,6 @@ var ICONS = {
   seguimiento:   '<svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
   paginas:       '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
   'páginas':     '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
-  variacion:     '<svg viewBox="0 0 24 24"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>',
-  'variación':   '<svg viewBox="0 0 24 24"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>',
   ideas:         '<svg viewBox="0 0 24 24"><line x1="12" y1="2" x2="12" y2="6"/><path d="M12 8a4 4 0 0 1 4 4c0 1.5-.8 2.8-2 3.5V17a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-1.5C8.8 14.8 8 13.5 8 12a4 4 0 0 1 4-4z"/><line x1="12" y1="21" x2="12" y2="22"/></svg>',
   configuracion: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
   'configuración':'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
@@ -844,7 +842,6 @@ function buildHTML(){
     { id:'seguimiento',    label:'Artículos blog',   group:'Análisis' },
     { id:'páginas',        label:'Páginas',          group:'Análisis' },
     { id:'oportunidades',  label:'Oportunidades',    group:'Análisis', hi:true },
-    { id:'variación',      label:'Variación',        group:'Acciones', hi:true, req2:true },
     { id:'ideas',          label:'Ideas',            group:'Acciones' },
     { id:'configuración',  label:'Configuración',    group:'Configuración' }
   ].filter(function(t){ return !t.req2 || (usingDirect ? !!S.gscCompareData : S.snapshots.length > 1); });
@@ -931,7 +928,7 @@ function buildHTML(){
       activeRangeLbl+
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>'+
     '</button>';
-  var DATA_TABS = { overview:1, 'seguimiento':1, 'páginas':1, oportunidades:1, 'variación':1, ideas:1 };
+  var DATA_TABS = { overview:1, 'seguimiento':1, 'páginas':1, oportunidades:1, ideas:1 };
   var topbarFilters = (DATA_TABS[S.tab] && hasData)
     ? dateFilterBtn + compareBadge
     : '';
@@ -1518,63 +1515,6 @@ function buildHTML(){
 
     if(opp.quickwins.length){content+='<p class="sec-lbl">Quick wins</p><div class="panel-table"><table><thead><tr><th>Consulta</th><th class="r">Impr.</th><th class="r">Posición</th><th>Acción</th></tr></thead><tbody>'+opp.quickwins.map(function(r){var pos=pP(r['Posición']);return'<tr><td>'+esc(r['Consultas principales']||'')+'</td><td class="r">'+r.Impresiones+'</td><td class="r"><span class="am">'+pos.toFixed(1)+'</span></td><td style="font-size:11px;color:var(--brand)">Mejorar snippet + contenido</td></tr>';}).join('')+'</tbody></table></div>';}
     if(opp.paidZero.length){content+='<p class="sec-lbl">Transaccionales con impresiones pero 0 clics</p><div class="panel-table"><table><thead><tr><th>Consulta</th><th class="r">Impr.</th><th class="r">Posición</th></tr></thead><tbody>'+opp.paidZero.map(function(r){var pos=pP(r['Posición']);return'<tr><td>'+esc(r['Consultas principales']||'')+'</td><td class="r">'+r.Impresiones+'</td><td class="r"><span class="'+posColor(pos)+'">'+pos.toFixed(1)+'</span></td></tr>';}).join('')+'</tbody></table></div>';}
-  }
-
-  // ── VARIACIÓN ──
-  if(S.tab==='variación'){
-    if(!prev){content+='<div class="insight info" style="text-align:center;padding:2rem">Necesitas al menos 2 snapshots para ver variación.</div>';}
-    else{
-      var varD=analyzeVar(cur,prev);
-      var gained=varD.filter(function(v){return v.dPos<-1;}).slice(0,15);
-      var lost=varD.filter(function(v){return v.dPos>1;}).slice(0,15);
-      var dM=calcM(cur),pM2=calcM(prev);
-      var varIcons = [
-        '<svg viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/></svg>',
-        '<svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
-        '<svg viewBox="0 0 24 24"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>',
-        '<svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.4 7.4 11.5 7.7 11.8a.5.5 0 0 0 .6 0C12.6 21.5 20 15.4 20 10a8 8 0 0 0-8-8z"/></svg>'
-      ];
-      var varIconCls = ['blue','green','amber','slate'];
-      content+='<div class="kpi-grid">'+['Clics','Impresiones','CTR %','Posición'].map(function(lbl,i){
-        var vals=[[dM.clics,pM2.clics],[dM.impr,pM2.impr],[dM.ctr,pM2.ctr],[dM.pos,pM2.pos]];
-        var cv=vals[i][0],pv=vals[i][1];var d=cv-pv;var inv=(i===3);var good=inv?d<0:d>0;
-        var fmt=[function(v){return Math.round(v).toLocaleString();},fmtK,function(v){return v.toFixed(2);},function(v){return v.toFixed(1);}];
-        var sfx=['','','%',''];
-        return'<div class="kpi-card">'+
-          '<div class="kpi-icon '+varIconCls[i]+'">'+varIcons[i]+'</div>'+
-          '<div class="kpi-lbl">'+lbl+'</div>'+
-          '<div class="kpi-val">'+fmt[i](cv)+sfx[i]+'</div>'+
-          '<div class="kpi-delta"><span class="'+(good?'up':'dn')+'">'+(good?'↑':'↓')+' '+fmt[i](Math.abs(d))+sfx[i]+'</span> vs '+esc(prevLabel)+'</div>'+
-        '</div>';
-      }).join('')+'</div>';
-
-      // Trend chart in variación tab
-      var vtd2 = usingDirect ? aggregateByWeek(S.gscData.grafico || []) : buildTrendData();
-      var ctd2 = usingDirect ? (S.gscCompareData ? aggregateByWeek(S.gscCompareData.grafico || []) : []) : [];
-      if(vtd2.length >= 2) {
-        var vtLabels = vtd2.map(function(d){ return d.label; });
-        var vtSeries = [
-          { label:'Clics',       values: vtd2.map(function(d){ return d.clics; }), color:'#E85249' },
-          { label:'Impresiones', values: vtd2.map(function(d){ return d.impr;  }), color:'#059669', dashed:true },
-          { label:'Posición',    values: vtd2.map(function(d){ return d.pos;   }), color:'#DC2626', yRight:true }
-        ];
-        if (ctd2.length >= 1) {
-          vtSeries.push({ label:'Clics (ant.)',  values: ctd2.map(function(d){return d.clics;}), color:'rgba(232,82,73,0.4)' });
-          vtSeries.push({ label:'Impr. (ant.)',  values: ctd2.map(function(d){return d.impr;}),  color:'rgba(5,150,105,0.4)', dashed:true });
-        }
-        content += '<div class="panel" style="padding:1rem 1.2rem 0.6rem">';
-        content += svgLineChart(vtLabels, vtSeries, { height:200, invertRight:true });
-        content += '<p style="font-size:10px;color:var(--muted);padding:4px 0 6px">Posición: eje derecho — valores más bajos = mejor ranking</p>';
-        content += '</div>';
-      }
-
-      function varTable(rows,title,up){
-        if(!rows.length)return'<p class="sec-lbl">'+title+' (ninguno)</p><div class="insight info">Sin movimientos significativos.</div>';
-        return'<p class="sec-lbl">'+title+' ('+rows.length+')</p><div class="panel-table"><table><thead><tr><th>URL / Consulta</th><th class="r">Ant.</th><th class="r">Act.</th><th class="r">Δ pos</th><th class="r">Clics</th><th class="r">Δ clics</th></tr></thead><tbody>'+rows.map(function(v){var badge=v.isPaid?'<span class="dot dot-blue"></span>':v.isSvc?'<span class="dot dot-amber"></span>':'';var dc=v.dClics>=0?'<span class="up">+'+Math.round(v.dClics)+'</span>':'<span class="dn">'+Math.round(v.dClics)+'</span>';return'<tr><td>'+badge+esc(v.label)+'</td><td class="r gray">'+v.posPrev.toFixed(1)+'</td><td class="r"><span class="'+posColor(v.posNow)+'">'+v.posNow.toFixed(1)+'</span></td><td class="r">'+(up?'<span class="up">↑'+Math.abs(v.dPos).toFixed(1)+'</span>':'<span class="dn">↓'+v.dPos.toFixed(1)+'</span>')+'</td><td class="r">'+Math.round(v.clicsNow)+'</td><td class="r">'+dc+'</td></tr>';}).join('')+'</tbody></table></div>';
-      }
-      content+=varTable(gained,'Mejoraron posición ↑',true)+varTable(lost,'Perdieron posición ↓',false);
-      content+='<p style="font-size:10px;color:#aaa;margin-top:8px"><span class="dot dot-blue"></span>consultas transaccionales &nbsp;<span class="dot dot-amber"></span>página de servicio</p>';
-    }
   }
 
   // ── ARTÍCULOS BLOG ──
