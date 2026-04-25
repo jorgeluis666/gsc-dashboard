@@ -437,6 +437,48 @@ function weekLabelToShort(label) {
   return mon.getDate() + ' ' + MONTHS_ES[mon.getMonth()];
 }
 
+// Convert an ISO week (2026-W15) into a "6–12 abr" date range.
+function weekLabelToRange(label) {
+  var mon = weekLabelToMonday(label);
+  if (!mon) return label;
+  var sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+  var d1 = mon.getDate(), m1 = MONTHS_ES[mon.getMonth()];
+  var d2 = sun.getDate(), m2 = MONTHS_ES[sun.getMonth()];
+  return (m1 === m2) ? (d1+'–'+d2+' '+m1) : (d1+' '+m1+'–'+d2+' '+m2);
+}
+
+// Convert "YYYY-MM-DD" → "D mmm".
+function isoDateToShort(iso) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+  if (!m) return iso || '';
+  return parseInt(m[3],10) + ' ' + (MONTHS_ES[parseInt(m[2],10)-1] || '');
+}
+
+// Turn a prevLabel produced upstream ("2026-W15", "2026-W13 → 2026-W15",
+// "2026-03-15 – 2026-04-12" or free text) into a human date range.
+function formatRangeLabel(lbl) {
+  if (!lbl) return '';
+  var s = String(lbl);
+  // ISO week single
+  if (/^\d{4}-W\d{2}$/.test(s)) return weekLabelToRange(s);
+  // ISO week span "W→W"
+  var mSpan = /^(\d{4}-W\d{2})\s*(?:→|->|–|-)\s*(\d{4}-W\d{2})$/.exec(s);
+  if (mSpan) {
+    var m1 = weekLabelToMonday(mSpan[1]);
+    var m2 = weekLabelToMonday(mSpan[2]);
+    if (m1 && m2) {
+      var sun = new Date(m2); sun.setDate(m2.getDate() + 6);
+      return m1.getDate()+' '+MONTHS_ES[m1.getMonth()]+' – '+sun.getDate()+' '+MONTHS_ES[sun.getMonth()];
+    }
+  }
+  // ISO date range "YYYY-MM-DD – YYYY-MM-DD"
+  var mRange = /^(\d{4}-\d{2}-\d{2})\s*[–-]\s*(\d{4}-\d{2}-\d{2})$/.exec(s);
+  if (mRange) return isoDateToShort(mRange[1]) + ' – ' + isoDateToShort(mRange[2]);
+  // Single ISO date
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return isoDateToShort(s);
+  return s;
+}
+
 function dayLabelToShort(label) {
   var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(label);
   if (!m) return label;
@@ -1259,9 +1301,9 @@ function buildHTML(){
         var good = d === null ? null : (inv ? d < 0 : d > 0);
         deltaHtml = '<div class="kpi-delta">';
         if (d !== null && Math.abs(d) > 0.001) {
-          deltaHtml += '<span class="'+(good?'up':'dn')+'">'+(good?'↑':'↓')+' '+f(Math.abs(d))+(sfx||'')+'</span> vs '+esc(prevLabel);
+          deltaHtml += '<span class="'+(good?'up':'dn')+'">'+(good?'↑':'↓')+' '+f(Math.abs(d))+(sfx||'')+'</span> vs '+esc(formatRangeLabel(prevLabel));
         } else if (pv != null) {
-          deltaHtml += '<span class="'+(inv?'up':'neu')+'">= '+f(val)+(sfx||'')+'</span> vs '+esc(prevLabel);
+          deltaHtml += '<span class="'+(inv?'up':'neu')+'">= '+f(val)+(sfx||'')+'</span> vs '+esc(formatRangeLabel(prevLabel));
         } else {
           deltaHtml += '<span class="neu">sin datos previos</span>';
         }
@@ -1423,11 +1465,11 @@ function buildHTML(){
     content += secCard('gained', '#059669',
       '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
       'Crecimiento', prev ? (topGainClics.length ? '+'+topGainClics.length : '—') : '—',
-      prev ? topGainClics.length+' páginas ganaron clics vs '+prevLabel : 'Activa comparación de período para ver crecimiento');
+      prev ? topGainClics.length+' páginas ganaron clics vs '+formatRangeLabel(prevLabel) : 'Activa comparación de período para ver crecimiento');
     content += secCard('lost', '#DC2626',
       '<polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/>',
       'Caídas', prev ? (topDropClics.length ? '-'+topDropClics.length : '—') : '—',
-      prev ? topDropClics.length+' páginas perdieron clics vs '+prevLabel : 'Activa comparación de período para ver caídas');
+      prev ? topDropClics.length+' páginas perdieron clics vs '+formatRangeLabel(prevLabel) : 'Activa comparación de período para ver caídas');
     content += '</div>';
 
     // ── Chart (adapts to selected section) ──
@@ -1496,7 +1538,7 @@ function buildHTML(){
         content += '<div class="panel" style="padding:1rem 1.2rem 0.8rem">'+
           '<p style="font-size:11px;font-weight:700;color:'+color+';margin:0 0 10px;letter-spacing:.2px">'+title+'</p>'+
           deltaBarChart(rows, color, verb, barAction)+
-          '<p style="font-size:10px;color:#94A3B8;padding:6px 0 2px;margin:0">vs '+esc(prevLabel)+'</p>'+
+          '<p style="font-size:10px;color:#94A3B8;padding:6px 0 2px;margin:0">vs '+esc(formatRangeLabel(prevLabel))+'</p>'+
           '</div>';
       }
     })();
@@ -1549,6 +1591,7 @@ function buildHTML(){
 
     // ── Table per selected section ──
     if(ovSec==='top'){
+      content += '<div class="panel" style="padding:1rem 1.2rem 0.8rem;margin-top:6px">';
       var pTopAll = paretoSplit(allSorted, function(r){ return r.clics; });
       if(pTopAll.count > 0 && pages.length > 0) content += paretoBadge(pTopAll.count, pages.length);
 
@@ -1587,6 +1630,7 @@ function buildHTML(){
         pgBtn('Siguiente ›', S.ovPage+1, S.ovPage>=maxPage)+
         pgBtn('Última »', maxPage, S.ovPage>=maxPage)+
       '</div>';
+      content += '</div>'; // /.panel top
     } else if(ovSec==='gained'){
       if(!prev){
         content += '<div class="insight info" style="margin-top:8px">Activa la comparación de período (botón de calendario arriba) para ver qué páginas están creciendo.</div>';
