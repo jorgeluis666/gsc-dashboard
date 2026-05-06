@@ -229,7 +229,15 @@ function doFetch5(siteUrl, base, callback) {
 }
 
 function fetchGSCData() {
-  if (!S.accessToken || !S.gscSiteUrl) return;
+  if (!S.accessToken) {
+    toast('⚠ No estás conectado — pulsa "Conectar GSC"');
+    return;
+  }
+  if (!S.gscSiteUrl) {
+    toast('⚠ Selecciona una propiedad de Search Console');
+    S.tab = 'configuración'; render();
+    return;
+  }
   var range = computeDateRange();
   S.gscLoading = true; S.gscData = null; render();
   doFetch5(S.gscSiteUrl, { startDate: range.start, endDate: range.end }, function(data) {
