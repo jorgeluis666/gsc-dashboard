@@ -835,7 +835,6 @@ function buildHTML(){
 
   var topbar = '<div class="topbar">'+
     '<div class="topbar-left">'+
-      '<span class="topbar-sep">|</span>'+
       '<span class="topbar-title">'+esc(tabLabel)+'</span>'+
     '</div>'+
     '<div class="topbar-right">'+
