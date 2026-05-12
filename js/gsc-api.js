@@ -154,14 +154,28 @@ function fetchGSCSites() {
     }
     S.gscSites  = sites;
     S.gscStatus = 'connected';
+    // Stale URL guard: si el gscSiteUrl guardado (de una sesión previa o de
+    // otra cuenta Google) no está en la lista que devolvió la API, lo
+    // limpiamos para no intentar fetchear una propiedad inaccesible.
+    if (S.gscSiteUrl && sites.indexOf(S.gscSiteUrl) === -1) {
+      S.gscSiteUrl = '';
+      S.gscData = null;
+      S.gscCompareData = null;
+    }
     if (!S.gscSiteUrl) {
       S.gscSiteUrl = sites.length === 1 ? sites[0] : '';
     }
     saveState();
-    if (sites.length > 1 && !S.gscSiteUrl) {
-      S.tab = 'configuración';
+    if (!sites.length) {
       render();
-      toast('✓ Conectado — elige la propiedad en Configuración');
+      toast('⚠ Esta cuenta no tiene propiedades verificadas en Search Console');
+      return;
+    }
+    if (sites.length > 1 && !S.gscSiteUrl) {
+      // Mostrar el picker en la pantalla de bienvenida (Overview) o
+      // redirigir a Configuración si ya están en otra pestaña.
+      render();
+      toast('✓ Conectado — elige cuál propiedad analizar ('+sites.length+' disponibles)');
     } else if (S.gscSiteUrl) {
       fetchGSCData();
     } else {
