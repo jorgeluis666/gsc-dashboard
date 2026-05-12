@@ -92,9 +92,29 @@ function pN(v){return parseFloat(String(v||'0').replace(/[%\s]/g,'').replace(','
 function pP(v){return parseFloat(String(v||'0').replace(',','.'))||0;}
 function isPaid(q){var ql=(q||'').toLowerCase();return PAID.some(function(p){return ql.includes(p);});}
 function isSvc(url){var ul=(url||'').toLowerCase();return SVCS.some(function(s){return ul.includes(s);});}
+
+// Paths que NO son artículos de blog aunque tengan 2+ segmentos
+// (WooCommerce, Shopify, archivos de categoría/tag, paginación, autor)
+var NON_BLOG_PATHS = [
+  '/producto/', '/productos/', '/product/', '/products/',
+  '/categoria-producto/', '/product-category/', '/product_cat/',
+  '/categoria/', '/categorias/', '/category/', '/categories/',
+  '/marca/', '/marcas/', '/brand/', '/brands/',
+  '/tag/', '/tags/', '/etiqueta/', '/etiquetas/',
+  '/tienda/', '/shop/', '/store/', '/coleccion/', '/collection/', '/collections/',
+  '/carrito/', '/cart/', '/checkout/', '/pago/',
+  '/mi-cuenta/', '/my-account/', '/cuenta/', '/account/',
+  '/page/', '/pagina/',                                   // paginación
+  '/author/', '/autor/',                                   // archivos de autor
+  '/wishlist/', '/favoritos/', '/lista-deseos/',
+  '/search/', '/buscar/'
+];
+
 function isBlogArticle(url){
   if(isSvc(url)) return false;
-  var path=(url||'').replace(/^https?:\/\/[^/]+/,'').replace(/\/$/,'');
+  var ul=(url||'').toLowerCase();
+  if(NON_BLOG_PATHS.some(function(p){return ul.indexOf(p)!==-1;})) return false;
+  var path=ul.replace(/^https?:\/\/[^/]+/,'').replace(/\/$/,'').split('?')[0];
   var parts=path.split('/').filter(function(p){return p.length>0;});
   return parts.length>=2;
 }
