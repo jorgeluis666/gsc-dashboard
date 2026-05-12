@@ -28,7 +28,8 @@ var S = {
   compareRange: 'previous', // previous | year | custom
   compareDateFrom: '',
   compareDateTo: '',
-  // user-configurable exclusions for the Artículos blog filter
+  // user-configurable filter for the Artículos blog tab
+  blogIncludePath: '',  // si está seteado, solo URLs con este prefijo cuentan como blog
   blogExcludePaths: '',
   // modal temp state (not persisted)
   showDateModal: false,
@@ -57,6 +58,7 @@ function loadState() {
       S.compareRange      = d.compareRange      || 'previous';
       S.compareDateFrom   = d.compareDateFrom   || '';
       S.compareDateTo     = d.compareDateTo     || '';
+      S.blogIncludePath   = d.blogIncludePath   || '';
       S.blogExcludePaths  = d.blogExcludePaths  || '';
       S.gscWasConnected   = !!d.gscWasConnected;
       // Render optimista: si estuvo conectado, mostramos "Cargando GSC…"
@@ -78,6 +80,7 @@ function saveState() {
       compareRange:     S.compareRange,
       compareDateFrom:  S.compareDateFrom,
       compareDateTo:    S.compareDateTo,
+      blogIncludePath:  S.blogIncludePath,
       blogExcludePaths: S.blogExcludePaths,
       gscWasConnected:  S.gscWasConnected
     }));
@@ -134,8 +137,18 @@ function userExtraExcludes() {
 }
 
 function isBlogArticle(url){
-  if(isSvc(url)) return false;
   var ul=(url||'').toLowerCase();
+  // Modo prefijo: si el usuario configura un "Prefijo del blog" (ej. /blog/),
+  // SOLO las URLs que lo contengan cuentan como blog. Salta el resto de heurísticas.
+  var prefix = (S.blogIncludePath||'').trim().toLowerCase();
+  if (prefix) {
+    if (ul.indexOf(prefix) === -1) return false;
+    // Aún así excluir si está en la lista (ej. /blog/page/2/)
+    if (NON_BLOG_PATHS.some(function(p){return ul.indexOf(p)!==-1;})) return false;
+    return true;
+  }
+  // Modo heurístico (sin prefijo configurado)
+  if(isSvc(url)) return false;
   if(NON_BLOG_PATHS.some(function(p){return ul.indexOf(p)!==-1;})) return false;
   var extras=userExtraExcludes();
   if(extras.length && extras.some(function(p){return ul.indexOf(p)!==-1;})) return false;
@@ -1002,21 +1015,37 @@ function buildHTML(){
         '</div>'+
       '</div>'+
 
-      // ── Filtro de blog: paths adicionales a excluir ──
+      // ── Filtro de blog: prefijo de inclusión + paths a excluir ──
       '<div class="setup-card" style="margin-top:16px">'+
         '<h2 style="margin-bottom:4px">Filtro de artículos blog</h2>'+
-        '<p class="desc" style="margin-bottom:16px">'+
-          'El tab <b>Artículos blog</b> excluye por defecto productos, categorías, '+
-          'marcas, paginación y archivos del sistema. Si tu sitio tiene paths '+
-          'extra que NO son blog (ej: <code>/recetas/</code>, <code>/eventos/</code>), '+
-          'agrégalos aquí separados por coma.'+
+        '<p class="desc" style="margin-bottom:18px">'+
+          'Define cómo el tab <b>Artículos blog</b> reconoce qué URLs son posts editoriales.'+
         '</p>'+
-        '<label style="font-size:11px;font-weight:600;color:#5F6368;letter-spacing:.04em;display:block;margin-bottom:6px">PATHS EXTRA A EXCLUIR</label>'+
-        '<div style="display:flex;gap:8px">'+
-          '<input id="cfg-blog-excludes" value="'+esc(S.blogExcludePaths||'')+'" '+
-            'placeholder="/woo-feed-brand/, /eventos/, /portfolio/" style="flex:1">'+
+
+        // OPCIÓN A — Prefijo (recomendado si tu blog vive en una ruta específica)
+        '<label style="font-size:11px;font-weight:600;color:#5F6368;letter-spacing:.04em;display:block;margin-bottom:6px">PREFIJO DEL BLOG <span style="color:var(--green-text);font-weight:500">· recomendado</span></label>'+
+        '<div style="display:flex;gap:8px;margin-bottom:8px">'+
+          '<input id="cfg-blog-prefix" value="'+esc(S.blogIncludePath||'')+'" '+
+            'placeholder="/blog/" style="flex:1">'+
           '<button class="btn primary" onclick="saveConfig()">Guardar</button>'+
         '</div>'+
+        '<p style="font-size:11px;color:var(--text-2);margin-bottom:20px;line-height:1.5">'+
+          'Si lo configurás, <b>solo</b> las URLs que contengan ese texto se clasifican como artículos.<br>'+
+          'Ejemplos: <code>/blog/</code>, <code>/articulos/</code>, <code>/noticias/</code>, <code>/recetas/</code>.<br>'+
+          '<i>Dejalo vacío para usar la heurística automática (URLs con 2+ segmentos, excluyendo e-commerce/sistema).</i>'+
+        '</p>'+
+
+        // OPCIÓN B — Exclusiones adicionales (solo aplica si NO hay prefijo)
+        '<label style="font-size:11px;font-weight:600;color:#5F6368;letter-spacing:.04em;display:block;margin-bottom:6px">PATHS EXTRA A EXCLUIR <span style="color:#80868B;font-weight:500">· opcional</span></label>'+
+        '<div style="display:flex;gap:8px;margin-bottom:6px">'+
+          '<input id="cfg-blog-excludes" value="'+esc(S.blogExcludePaths||'')+'" '+
+            'placeholder="/woo-feed-brand/, /portfolio/" style="flex:1">'+
+          '<button class="btn" onclick="saveConfig()">Guardar</button>'+
+        '</div>'+
+        '<p style="font-size:11px;color:var(--text-2);line-height:1.5">'+
+          'Útil si NO usas prefijo y solo querés sumar exclusiones extra a la heurística por defecto. '+
+          'Separá por coma.'+
+        '</p>'+
       '</div>';
 
     // ── ESTADO: SIN CLIENT ID — primera vez ──
@@ -1490,7 +1519,38 @@ function buildHTML(){
     var prevPages2 = prev ? ((prev&&prev.data?prev.data.paginas:[]) || []) : [];
 
     if(!blogPages.length){
-      content+='<div class="insight info">No hay artículos de blog en este período.</div>';
+      // Diagnóstico: clasificar todas las páginas para entender qué hay
+      var diagSvc=0, diagNonBlog=0, diagShallow=0;
+      allPages.forEach(function(r){
+        var u = (r['Páginas principales']||'').toLowerCase();
+        if (isSvc(u)) { diagSvc++; return; }
+        if (NON_BLOG_PATHS.some(function(p){return u.indexOf(p)!==-1;})) { diagNonBlog++; return; }
+        var path=u.replace(/^https?:\/\/[^/]+/,'').replace(/\/$/,'').split('?')[0];
+        var parts=path.split('/').filter(function(p){return p.length>0;});
+        if (parts.length<2) diagShallow++;
+      });
+      var samplePaths = allPages.slice(0,8).map(function(r){
+        return '<li style="font-family:monospace;font-size:11px;color:#5F6368">'+esc(shortURL(r['Páginas principales']||''))+'</li>';
+      }).join('');
+      var hint = S.blogIncludePath
+        ? 'No se encontraron URLs que contengan el prefijo "<code>'+esc(S.blogIncludePath)+'</code>". Revisa que esté escrito como aparece en tu sitio o déjalo vacío para usar la heurística automática.'
+        : 'Si tu blog está en una ruta específica (ej. <code>/blog/</code>, <code>/articulos/</code>, <code>/noticias/</code>), configúrala en <b>Configuración → Filtro de artículos blog → Prefijo del blog</b>.';
+      content+='<div class="insight info" style="margin-bottom:16px">No hay artículos de blog en este período.</div>';
+      content+='<div class="panel">'+
+        '<h3 style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">¿Por qué?</h3>'+
+        '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">'+
+          '<div><div style="font-size:24px;font-weight:500;color:var(--text)">'+allPages.length+'</div><div style="font-size:11px;color:var(--text-2)">páginas totales</div></div>'+
+          '<div><div style="font-size:24px;font-weight:500;color:var(--text)">'+diagSvc+'</div><div style="font-size:11px;color:var(--text-2)">de servicio (excluidas)</div></div>'+
+          '<div><div style="font-size:24px;font-weight:500;color:var(--text)">'+diagNonBlog+'</div><div style="font-size:11px;color:var(--text-2)">e-commerce / sistema</div></div>'+
+          '<div><div style="font-size:24px;font-weight:500;color:var(--text)">'+diagShallow+'</div><div style="font-size:11px;color:var(--text-2)">1-segmento (landings)</div></div>'+
+        '</div>'+
+        '<p style="font-size:12px;color:var(--text-2);line-height:1.6;margin-bottom:10px">'+hint+'</p>'+
+        (samplePaths
+          ? '<details><summary style="cursor:pointer;font-size:12px;color:var(--blue-text);font-weight:500">Ver las primeras '+Math.min(8,allPages.length)+' páginas detectadas</summary>'+
+              '<ul style="list-style:none;margin-top:10px;padding-left:0;display:flex;flex-direction:column;gap:4px">'+samplePaths+'</ul>'+
+            '</details>'
+          : '')+
+      '</div>';
     } else {
       var pBlog = paretoSplit(blogPages, function(r){ return pN(r.Clics); });
       content += paretoBadge(pBlog.count, blogPages.length);
@@ -1546,7 +1606,10 @@ function buildHTML(){
         (prev?'<th class="r">Δ clics</th><th class="r">Δ impr.</th><th class="r">Δ pos</th>':'')+
         '<th></th>'+
       '</tr></thead><tbody>'+blogRowsHtml+'</tbody></table></div>';
-      content+='<p style="font-size:10px;color:#aaa;margin-top:6px">'+blogPages.length+' artículos detectados (URLs con 2+ segmentos de ruta)</p>';
+      var ruleLbl = S.blogIncludePath
+        ? 'URLs con prefijo "'+esc(S.blogIncludePath)+'"'
+        : 'URLs con 2+ segmentos de ruta · excluye productos, categorías y archivos del sistema';
+      content+='<p style="font-size:10px;color:#aaa;margin-top:6px">'+blogPages.length+' artículos detectados ('+ruleLbl+')</p>';
     }
   }
 
@@ -1792,9 +1855,11 @@ function bindEvents(){
 function saveConfig(){
   var cid  = document.getElementById('cfg-clientid');
   var gss  = document.getElementById('cfg-gscsite');
+  var bin  = document.getElementById('cfg-blog-prefix');
   var bex  = document.getElementById('cfg-blog-excludes');
   if(cid)  S.clientId         = cid.value.trim();
   if(gss)  S.gscSiteUrl       = gss.value;
+  if(bin)  S.blogIncludePath  = bin.value.trim();
   if(bex)  S.blogExcludePaths = bex.value.trim();
   saveState();
   toast('✓ Configuración guardada');
