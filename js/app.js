@@ -27,6 +27,8 @@ var S = {
   compareRange: 'previous', // previous | year | custom
   compareDateFrom: '',
   compareDateTo: '',
+  // user-configurable exclusions for the Artículos blog filter
+  blogExcludePaths: '',
   // modal temp state (not persisted)
   showDateModal: false,
   modalTab: 'filtrar',      // filtrar | comparar
@@ -54,6 +56,7 @@ function loadState() {
       S.compareRange      = d.compareRange      || 'previous';
       S.compareDateFrom   = d.compareDateFrom   || '';
       S.compareDateTo     = d.compareDateTo     || '';
+      S.blogExcludePaths  = d.blogExcludePaths  || '';
     }
   } catch(e) {}
 }
@@ -69,7 +72,8 @@ function saveState() {
       compareEnabled:   S.compareEnabled,
       compareRange:     S.compareRange,
       compareDateFrom:  S.compareDateFrom,
-      compareDateTo:    S.compareDateTo
+      compareDateTo:    S.compareDateTo,
+      blogExcludePaths: S.blogExcludePaths
     }));
   } catch(e) {}
 }
@@ -94,7 +98,8 @@ function isPaid(q){var ql=(q||'').toLowerCase();return PAID.some(function(p){ret
 function isSvc(url){var ul=(url||'').toLowerCase();return SVCS.some(function(s){return ul.includes(s);});}
 
 // Paths que NO son artículos de blog aunque tengan 2+ segmentos
-// (WooCommerce, Shopify, archivos de categoría/tag, paginación, autor)
+// (WooCommerce, Shopify, archivos de categoría/tag, paginación, autor,
+//  plugins de e-commerce como Woo Feed)
 var NON_BLOG_PATHS = [
   '/producto/', '/productos/', '/product/', '/products/',
   '/categoria-producto/', '/product-category/', '/product_cat/',
@@ -107,13 +112,27 @@ var NON_BLOG_PATHS = [
   '/page/', '/pagina/',                                   // paginación
   '/author/', '/autor/',                                   // archivos de autor
   '/wishlist/', '/favoritos/', '/lista-deseos/',
-  '/search/', '/buscar/'
+  '/search/', '/buscar/',
+  '/woo-', '/wc-',                                         // WooCommerce + plugins (woo-feed-brand, wc-api, etc.)
+  '/feed/', '/feeds/', '/rss/',                            // RSS / Atom feeds
+  '/wp-json/', '/wp-admin/', '/wp-content/', '/wp-login',  // WordPress internals
+  '/sitemap', '/robots.txt', '/.well-known/'               // archivos técnicos
 ];
+
+// Permite a cada usuario sumar paths adicionales desde Configuración
+// (separados por coma, ej: "/marca-blanca/, /eventos/")
+function userExtraExcludes() {
+  return (S.blogExcludePaths || '')
+    .split(',').map(function(s){ return s.trim().toLowerCase(); })
+    .filter(function(s){ return s.length > 1; });
+}
 
 function isBlogArticle(url){
   if(isSvc(url)) return false;
   var ul=(url||'').toLowerCase();
   if(NON_BLOG_PATHS.some(function(p){return ul.indexOf(p)!==-1;})) return false;
+  var extras=userExtraExcludes();
+  if(extras.length && extras.some(function(p){return ul.indexOf(p)!==-1;})) return false;
   var path=ul.replace(/^https?:\/\/[^/]+/,'').replace(/\/$/,'').split('?')[0];
   var parts=path.split('/').filter(function(p){return p.length>0;});
   return parts.length>=2;
@@ -975,6 +994,23 @@ function buildHTML(){
         '<div style="margin-top:0.5rem">'+
           '<button class="btn btn-sm" style="color:#94A3B8" onclick="disconnectGSC()">Desconectar</button>'+
         '</div>'+
+      '</div>'+
+
+      // ── Filtro de blog: paths adicionales a excluir ──
+      '<div class="setup-card" style="margin-top:16px">'+
+        '<h2 style="margin-bottom:4px">Filtro de artículos blog</h2>'+
+        '<p class="desc" style="margin-bottom:16px">'+
+          'El tab <b>Artículos blog</b> excluye por defecto productos, categorías, '+
+          'marcas, paginación y archivos del sistema. Si tu sitio tiene paths '+
+          'extra que NO son blog (ej: <code>/recetas/</code>, <code>/eventos/</code>), '+
+          'agrégalos aquí separados por coma.'+
+        '</p>'+
+        '<label style="font-size:11px;font-weight:600;color:#5F6368;letter-spacing:.04em;display:block;margin-bottom:6px">PATHS EXTRA A EXCLUIR</label>'+
+        '<div style="display:flex;gap:8px">'+
+          '<input id="cfg-blog-excludes" value="'+esc(S.blogExcludePaths||'')+'" '+
+            'placeholder="/woo-feed-brand/, /eventos/, /portfolio/" style="flex:1">'+
+          '<button class="btn primary" onclick="saveConfig()">Guardar</button>'+
+        '</div>'+
       '</div>';
 
     // ── ESTADO: SIN CLIENT ID — primera vez ──
@@ -1750,8 +1786,10 @@ function bindEvents(){
 function saveConfig(){
   var cid  = document.getElementById('cfg-clientid');
   var gss  = document.getElementById('cfg-gscsite');
-  if(cid)  S.clientId   = cid.value.trim();
-  if(gss)  S.gscSiteUrl = gss.value;
+  var bex  = document.getElementById('cfg-blog-excludes');
+  if(cid)  S.clientId         = cid.value.trim();
+  if(gss)  S.gscSiteUrl       = gss.value;
+  if(bex)  S.blogExcludePaths = bex.value.trim();
   saveState();
   toast('✓ Configuración guardada');
   render();
