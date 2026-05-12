@@ -10,6 +10,7 @@ var S = {
   gscStatus: 'disconnected',  // disconnected | loading | connected
   gscSiteUrl: '',
   gscSites: [],
+  gscWasConnected: false,  // persiste solo un flag — el token se re-pide silencioso al cargar
   // direct api data (not persisted)
   gscData: null,
   gscCompareData: null,
@@ -57,6 +58,10 @@ function loadState() {
       S.compareDateFrom   = d.compareDateFrom   || '';
       S.compareDateTo     = d.compareDateTo     || '';
       S.blogExcludePaths  = d.blogExcludePaths  || '';
+      S.gscWasConnected   = !!d.gscWasConnected;
+      // Render optimista: si estuvo conectado, mostramos "Cargando GSC…"
+      // mientras se intenta el silent re-auth.
+      if (S.gscWasConnected) S.gscStatus = 'loading';
     }
   } catch(e) {}
 }
@@ -73,7 +78,8 @@ function saveState() {
       compareRange:     S.compareRange,
       compareDateFrom:  S.compareDateFrom,
       compareDateTo:    S.compareDateTo,
-      blogExcludePaths: S.blogExcludePaths
+      blogExcludePaths: S.blogExcludePaths,
+      gscWasConnected:  S.gscWasConnected
     }));
   } catch(e) {}
 }
@@ -1801,6 +1807,7 @@ function disconnectGSC(){
   }
   S.accessToken = null;
   S.gscStatus = 'disconnected';
+  S.gscWasConnected = false;
   S.gscSites = [];
   S.gscData = null;
   S.gscCompareData = null;

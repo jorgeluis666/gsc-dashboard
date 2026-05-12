@@ -107,41 +107,65 @@ function rowsToPaises(rows) {
 
 // ── CONNECT / FETCH SITES ────────────────────────────────
 var gscTokenClient = null;
+var gscSilentAttempt = false; // distingue intento silencioso de uno con popup
+
+function ensureGscTokenClient() {
+  if (gscTokenClient || !S.clientId) return gscTokenClient;
+  if (typeof google === 'undefined' || !google.accounts) return null;
+  gscTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: S.clientId,
+    scope: [
+      'https://www.googleapis.com/auth/webmasters.readonly',
+      'https://www.googleapis.com/auth/indexing'
+    ].join(' '),
+    callback: function(resp) {
+      if (resp.error) {
+        // Silencioso: no toast — es esperado si la sesión Google expiró
+        S.gscStatus = 'disconnected';
+        S.gscWasConnected = false;
+        saveState();
+        if (!gscSilentAttempt) toast('Error al conectar: ' + resp.error);
+        gscSilentAttempt = false;
+        render();
+        return;
+      }
+      gscSilentAttempt = false;
+      S.accessToken = resp.access_token;
+      S.gscWasConnected = true;
+      saveState();
+      fetchGSCSites();
+    }
+  });
+  return gscTokenClient;
+}
 
 function connectGSC() {
   if (!S.clientId) { toast('Client ID no configurado'); return; }
-
-  // If we already have a valid token, go straight to fetching sites
   if (S.accessToken) { fetchGSCSites(); return; }
-
-  // GIS (accounts.google.com/gsi/client) must be loaded
   if (typeof google === 'undefined' || !google.accounts) {
     toast('Cargando librería de Google, intenta en un momento…'); return;
   }
-
   S.gscStatus = 'loading'; render();
-
-  // Init token client once (GIS only — fetch-based, no gapi needed)
-  if (!gscTokenClient) {
-    gscTokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: S.clientId,
-      scope: [
-        'https://www.googleapis.com/auth/webmasters.readonly',
-        'https://www.googleapis.com/auth/indexing'
-      ].join(' '),
-      callback: function(resp) {
-        if (resp.error) {
-          S.gscStatus = 'disconnected';
-          toast('Error al conectar: ' + resp.error);
-          render(); return;
-        }
-        S.accessToken = resp.access_token;
-        fetchGSCSites();
-      }
-    });
-  }
-
+  gscSilentAttempt = false;
+  ensureGscTokenClient();
   gscTokenClient.requestAccessToken({ prompt: '' });
+}
+
+// Intenta refrescar el token sin popup. Si Google todavía considera al
+// usuario autenticado y con consentimiento, devuelve un token nuevo en
+// milisegundos. Si no, falla limpiamente y volvemos a "Conectar".
+function tryAutoReconnect(retries) {
+  retries = retries || 0;
+  if (!S.gscWasConnected || S.accessToken || !S.clientId) return;
+  if (typeof google === 'undefined' || !google.accounts) {
+    if (retries < 40) setTimeout(function(){ tryAutoReconnect(retries+1); }, 150);
+    return;
+  }
+  S.gscStatus = 'loading'; render();
+  gscSilentAttempt = true;
+  ensureGscTokenClient();
+  // prompt:'none' = sin popup. Si requiere interacción → error en callback.
+  gscTokenClient.requestAccessToken({ prompt: 'none' });
 }
 
 function fetchGSCSites() {
@@ -347,3 +371,7 @@ function switchGSCProperty(newSiteUrl) {
   saveState();
   fetchGSCData();
 }
+
+// Silent re-auth al cargar la página si previamente había conexión.
+// Espera a que la librería GIS esté lista (load async) con reintentos.
+tryAutoReconnect();
