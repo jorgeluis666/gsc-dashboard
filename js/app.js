@@ -29,6 +29,10 @@ var S = {
   compareDateFrom: '',
   compareDateTo: '',
   // user-configurable filter for the Artículos blog tab
+  blogSitemapUrl: '',   // URL del sitemap de posts (ej. /post-sitemap.xml)
+  blogSitemapUrls: [],  // URLs extraídas del sitemap (lista exacta de artículos)
+  blogSitemapDate: '',  // ISO timestamp de la última carga del sitemap
+  blogSitemapLoading: false,  // no persisted
   blogIncludePath: '',  // si está seteado, solo URLs con este prefijo cuentan como blog
   blogExcludePaths: '',
   // modal temp state (not persisted)
@@ -58,6 +62,9 @@ function loadState() {
       S.compareRange      = d.compareRange      || 'previous';
       S.compareDateFrom   = d.compareDateFrom   || '';
       S.compareDateTo     = d.compareDateTo     || '';
+      S.blogSitemapUrl    = d.blogSitemapUrl    || '';
+      S.blogSitemapUrls   = d.blogSitemapUrls   || [];
+      S.blogSitemapDate   = d.blogSitemapDate   || '';
       S.blogIncludePath   = d.blogIncludePath   || '';
       S.blogExcludePaths  = d.blogExcludePaths  || '';
       S.gscWasConnected   = !!d.gscWasConnected;
@@ -80,6 +87,9 @@ function saveState() {
       compareRange:     S.compareRange,
       compareDateFrom:  S.compareDateFrom,
       compareDateTo:    S.compareDateTo,
+      blogSitemapUrl:   S.blogSitemapUrl,
+      blogSitemapUrls:  S.blogSitemapUrls,
+      blogSitemapDate:  S.blogSitemapDate,
       blogIncludePath:  S.blogIncludePath,
       blogExcludePaths: S.blogExcludePaths,
       gscWasConnected:  S.gscWasConnected
@@ -136,18 +146,26 @@ function userExtraExcludes() {
     .filter(function(s){ return s.length > 1; });
 }
 
+// Normaliza una URL para comparar (lowercase + sin trailing slash + sin querystring)
+function normURL(u){
+  return (u||'').toLowerCase().replace(/\/$/,'').split('?')[0].split('#')[0];
+}
+
 function isBlogArticle(url){
   var ul=(url||'').toLowerCase();
-  // Modo prefijo: si el usuario configura un "Prefijo del blog" (ej. /blog/),
-  // SOLO las URLs que lo contengan cuentan como blog. Salta el resto de heurísticas.
+  // Modo 1: lista exacta del sitemap. Es lo más confiable cuando está disponible.
+  if (S.blogSitemapUrls && S.blogSitemapUrls.length) {
+    var n = normURL(url);
+    return S.blogSitemapUrls.some(function(u){ return normURL(u) === n; });
+  }
+  // Modo 2: prefijo. Si el usuario configura "/blog/", solo URLs con ese substring.
   var prefix = (S.blogIncludePath||'').trim().toLowerCase();
   if (prefix) {
     if (ul.indexOf(prefix) === -1) return false;
-    // Aún así excluir si está en la lista (ej. /blog/page/2/)
     if (NON_BLOG_PATHS.some(function(p){return ul.indexOf(p)!==-1;})) return false;
     return true;
   }
-  // Modo heurístico (sin prefijo configurado)
+  // Modo 3: heurística (fallback)
   if(isSvc(url)) return false;
   if(NON_BLOG_PATHS.some(function(p){return ul.indexOf(p)!==-1;})) return false;
   var extras=userExtraExcludes();
@@ -155,6 +173,87 @@ function isBlogArticle(url){
   var path=ul.replace(/^https?:\/\/[^/]+/,'').replace(/\/$/,'').split('?')[0];
   var parts=path.split('/').filter(function(p){return p.length>0;});
   return parts.length>=2;
+}
+
+// ── BLOG SITEMAP FETCH ─────────────────────────────────────
+// WordPress sitemaps no mandan CORS headers → intentamos directo, si falla
+// pasamos por api.allorigins.win (proxy público gratuito).
+function fetchSitemapXML(url, cb) {
+  var done = false;
+  var timeoutId = setTimeout(function(){
+    if (done) return;
+    done = true;
+    cb(new Error('Timeout'), null);
+  }, 12000);
+
+  function complete(err, text) {
+    if (done) return;
+    done = true;
+    clearTimeout(timeoutId);
+    cb(err, text);
+  }
+
+  // 1) Intento directo
+  fetch(url)
+    .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.text(); })
+    .then(function(t){ complete(null, t); })
+    .catch(function(){
+      // 2) Fallback via proxy CORS público
+      var proxy = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
+      fetch(proxy)
+        .then(function(r){ if(!r.ok) throw new Error('Proxy HTTP '+r.status); return r.text(); })
+        .then(function(t){ complete(null, t); })
+        .catch(function(e){ complete(e, null); });
+    });
+}
+
+function parseSitemapLocs(xml) {
+  // Extrae todos los <loc>...</loc> (funciona tanto en urlset como en sitemapindex)
+  var urls = [];
+  var re = /<loc>\s*([^<\s]+)\s*<\/loc>/gi;
+  var m;
+  while ((m = re.exec(xml)) !== null) urls.push(m[1].trim());
+  var isIndex = /<sitemapindex[\s>]/i.test(xml);
+  return { urls: urls, isIndex: isIndex };
+}
+
+function loadBlogSitemap() {
+  var input = document.getElementById('cfg-blog-sitemap');
+  if (input) S.blogSitemapUrl = input.value.trim();
+  var url = S.blogSitemapUrl;
+  if (!url) { toast('Pegá la URL del sitemap primero'); return; }
+  if (!/^https?:\/\//i.test(url)) { toast('La URL debe empezar con http:// o https://'); return; }
+  S.blogSitemapLoading = true; render();
+  fetchSitemapXML(url, function(err, xml){
+    S.blogSitemapLoading = false;
+    if (err || !xml) {
+      toast('Error al cargar sitemap: '+(err && err.message || 'sin respuesta'));
+      render(); return;
+    }
+    var parsed = parseSitemapLocs(xml);
+    if (parsed.isIndex) {
+      toast('⚠ Este es un sitemap índice. Pegá la URL específica del sitemap de posts (ej. /post-sitemap.xml).');
+      render(); return;
+    }
+    if (!parsed.urls.length) {
+      toast('No se encontraron URLs en el sitemap. ¿Está vacío o malformado?');
+      render(); return;
+    }
+    S.blogSitemapUrls = parsed.urls;
+    S.blogSitemapDate = new Date().toISOString();
+    saveState();
+    render();
+    toast('✓ '+parsed.urls.length+' URLs cargadas del sitemap');
+  });
+}
+
+function clearBlogSitemap() {
+  S.blogSitemapUrl = '';
+  S.blogSitemapUrls = [];
+  S.blogSitemapDate = '';
+  saveState();
+  render();
+  toast('Sitemap del blog desvinculado');
 }
 function shortURL(u){return(u||'').replace('https://limaretail.com','').split('#')[0]||'/';}
 function fmtK(v){return v>=1000?(v/1000).toFixed(1)+'k':Math.round(v)+'';}
@@ -1015,36 +1114,62 @@ function buildHTML(){
         '</div>'+
       '</div>'+
 
-      // ── Filtro de blog: prefijo de inclusión + paths a excluir ──
+      // ── Filtro de blog: 3 métodos en orden de precisión ──
       '<div class="setup-card" style="margin-top:16px">'+
         '<h2 style="margin-bottom:4px">Filtro de artículos blog</h2>'+
         '<p class="desc" style="margin-bottom:18px">'+
-          'Define cómo el tab <b>Artículos blog</b> reconoce qué URLs son posts editoriales.'+
+          'Define cómo el tab <b>Artículos blog</b> reconoce qué URLs son posts editoriales. '+
+          'Los métodos se aplican en orden — el primero que esté configurado gana.'+
         '</p>'+
 
-        // OPCIÓN A — Prefijo (recomendado si tu blog vive en una ruta específica)
-        '<label style="font-size:11px;font-weight:600;color:#5F6368;letter-spacing:.04em;display:block;margin-bottom:6px">PREFIJO DEL BLOG <span style="color:var(--green-text);font-weight:500">· recomendado</span></label>'+
+        // MÉTODO 1 — Sitemap (lo más preciso)
+        '<label style="font-size:11px;font-weight:600;color:#5F6368;letter-spacing:.04em;display:block;margin-bottom:6px">'+
+          'MÉTODO 1: SITEMAP DEL BLOG <span style="color:var(--green-text);font-weight:500">· más preciso</span>'+
+        '</label>'+
+        '<div style="display:flex;gap:8px;margin-bottom:8px">'+
+          '<input id="cfg-blog-sitemap" value="'+esc(S.blogSitemapUrl||'')+'" '+
+            'placeholder="https://tusitio.com/post-sitemap.xml" style="flex:1">'+
+          '<button class="btn primary" onclick="loadBlogSitemap()" '+(S.blogSitemapLoading?'disabled':'')+'>'+
+            (S.blogSitemapLoading ? '<span class="spinning">↻</span> Cargando' : '↓ Cargar')+
+          '</button>'+
+        '</div>'+
+        (S.blogSitemapUrls && S.blogSitemapUrls.length
+          ? '<div style="background:var(--green-soft);border-radius:8px;padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:8px">'+
+              '<div style="font-size:12px;color:var(--green-text)">'+
+                '<b>✓ '+S.blogSitemapUrls.length+' URLs cargadas</b>'+
+                (S.blogSitemapDate ? ' · '+new Date(S.blogSitemapDate).toLocaleString('es-PE',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '')+
+              '</div>'+
+              '<button class="btn btn-sm ghost" onclick="clearBlogSitemap()" style="color:var(--text-2)">Desvincular</button>'+
+            '</div>'
+          : '')+
+        '<p style="font-size:11px;color:var(--text-2);margin-bottom:24px;line-height:1.5">'+
+          'En WordPress generalmente está en <code>/post-sitemap.xml</code>. '+
+          'Si el sitio bloquea CORS, se usa automáticamente un proxy público (api.allorigins.win).<br>'+
+          '<i>Esta es la opción más confiable — usa las URLs exactas que el sitio publica como blog.</i>'+
+        '</p>'+
+
+        // MÉTODO 2 — Prefijo
+        '<label style="font-size:11px;font-weight:600;color:#5F6368;letter-spacing:.04em;display:block;margin-bottom:6px">MÉTODO 2: PREFIJO DEL BLOG</label>'+
         '<div style="display:flex;gap:8px;margin-bottom:8px">'+
           '<input id="cfg-blog-prefix" value="'+esc(S.blogIncludePath||'')+'" '+
             'placeholder="/blog/" style="flex:1">'+
-          '<button class="btn primary" onclick="saveConfig()">Guardar</button>'+
+          '<button class="btn" onclick="saveConfig()">Guardar</button>'+
         '</div>'+
         '<p style="font-size:11px;color:var(--text-2);margin-bottom:20px;line-height:1.5">'+
-          'Si lo configurás, <b>solo</b> las URLs que contengan ese texto se clasifican como artículos.<br>'+
-          'Ejemplos: <code>/blog/</code>, <code>/articulos/</code>, <code>/noticias/</code>, <code>/recetas/</code>.<br>'+
-          '<i>Dejalo vacío para usar la heurística automática (URLs con 2+ segmentos, excluyendo e-commerce/sistema).</i>'+
+          'Si no podés cargar sitemap, definí el prefijo del blog manualmente. '+
+          'Ejemplos: <code>/blog/</code>, <code>/articulos/</code>, <code>/noticias/</code>.'+
         '</p>'+
 
-        // OPCIÓN B — Exclusiones adicionales (solo aplica si NO hay prefijo)
-        '<label style="font-size:11px;font-weight:600;color:#5F6368;letter-spacing:.04em;display:block;margin-bottom:6px">PATHS EXTRA A EXCLUIR <span style="color:#80868B;font-weight:500">· opcional</span></label>'+
+        // MÉTODO 3 — Heurística + exclusiones
+        '<label style="font-size:11px;font-weight:600;color:#5F6368;letter-spacing:.04em;display:block;margin-bottom:6px">MÉTODO 3: HEURÍSTICA · paths extra a excluir</label>'+
         '<div style="display:flex;gap:8px;margin-bottom:6px">'+
           '<input id="cfg-blog-excludes" value="'+esc(S.blogExcludePaths||'')+'" '+
             'placeholder="/woo-feed-brand/, /portfolio/" style="flex:1">'+
           '<button class="btn" onclick="saveConfig()">Guardar</button>'+
         '</div>'+
         '<p style="font-size:11px;color:var(--text-2);line-height:1.5">'+
-          'Útil si NO usas prefijo y solo querés sumar exclusiones extra a la heurística por defecto. '+
-          'Separá por coma.'+
+          'Fallback automático cuando los métodos 1 y 2 están vacíos. '+
+          'Suma paths a la lista de exclusiones por defecto.'+
         '</p>'+
       '</div>';
 
@@ -1532,9 +1657,15 @@ function buildHTML(){
       var samplePaths = allPages.slice(0,8).map(function(r){
         return '<li style="font-family:monospace;font-size:11px;color:#5F6368">'+esc(shortURL(r['Páginas principales']||''))+'</li>';
       }).join('');
-      var hint = S.blogIncludePath
-        ? 'No se encontraron URLs que contengan el prefijo "<code>'+esc(S.blogIncludePath)+'</code>". Revisa que esté escrito como aparece en tu sitio o déjalo vacío para usar la heurística automática.'
-        : 'Si tu blog está en una ruta específica (ej. <code>/blog/</code>, <code>/articulos/</code>, <code>/noticias/</code>), configúrala en <b>Configuración → Filtro de artículos blog → Prefijo del blog</b>.';
+      var hint;
+      if (S.blogSitemapUrls && S.blogSitemapUrls.length) {
+        hint = 'El sitemap cargó <b>'+S.blogSitemapUrls.length+' URLs</b>, pero ninguna coincide con páginas en GSC en este período. '+
+               'Las URLs del sitemap pueden estar desactualizadas — refrescá desde <b>Configuración → Filtro de artículos blog → Cargar</b>.';
+      } else if (S.blogIncludePath) {
+        hint = 'No se encontraron URLs que contengan el prefijo "<code>'+esc(S.blogIncludePath)+'</code>". Revisa que esté escrito como aparece en tu sitio o pegá el sitemap del blog en Configuración.';
+      } else {
+        hint = 'La forma más confiable es pegar el sitemap del blog en <b>Configuración → Filtro de artículos blog → MÉTODO 1: SITEMAP</b>. En WordPress suele estar en <code>/post-sitemap.xml</code>.';
+      }
       content+='<div class="insight info" style="margin-bottom:16px">No hay artículos de blog en este período.</div>';
       content+='<div class="panel">'+
         '<h3 style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">¿Por qué?</h3>'+
@@ -1606,9 +1737,11 @@ function buildHTML(){
         (prev?'<th class="r">Δ clics</th><th class="r">Δ impr.</th><th class="r">Δ pos</th>':'')+
         '<th></th>'+
       '</tr></thead><tbody>'+blogRowsHtml+'</tbody></table></div>';
-      var ruleLbl = S.blogIncludePath
-        ? 'URLs con prefijo "'+esc(S.blogIncludePath)+'"'
-        : 'URLs con 2+ segmentos de ruta · excluye productos, categorías y archivos del sistema';
+      var ruleLbl = (S.blogSitemapUrls && S.blogSitemapUrls.length)
+        ? 'URLs del sitemap '+esc(S.blogSitemapUrl)
+        : S.blogIncludePath
+          ? 'URLs con prefijo "'+esc(S.blogIncludePath)+'"'
+          : 'heurística: 2+ segmentos · excluye productos, categorías y archivos del sistema';
       content+='<p style="font-size:10px;color:#aaa;margin-top:6px">'+blogPages.length+' artículos detectados ('+ruleLbl+')</p>';
     }
   }
