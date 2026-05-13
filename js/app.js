@@ -607,10 +607,21 @@ function svgLineChart(labels, series, opts) {
     }
   }
 
-  // X axis labels — every point labeled. Rotate when dense so "todos los días" caben.
-  // With weeks: use horizontal; with days (>14 points): rotate -45°.
-  var rotate = n > 14;
+  // Densidad de elementos según cantidad de puntos:
+  //   ≤14: todas las etiquetas X horizontales + dots + labels en cada punto
+  //   15-30: etiquetas X rotadas + dots + labels (más pequeños)
+  //   31-60: thin X labels (cada ~6) + dots sin labels
+  //   >60:  thin X labels + sin dots (líneas limpias estilo GSC)
+  var density = n <= 14 ? 'detailed' : n <= 30 ? 'medium' : n <= 60 ? 'sparse' : 'minimal';
+  var xLabelStep = density === 'minimal' ? Math.ceil(n/8)
+                 : density === 'sparse'  ? Math.ceil(n/12)
+                 : density === 'medium'  ? 1
+                 : 1;
+  var rotate = density !== 'detailed';
+
+  // X axis labels (thin out cuando hay muchos puntos)
   labels.forEach(function(lbl, i) {
+    if (i % xLabelStep !== 0 && i !== n - 1) return;  // siempre mostrar el último
     var x = xOf(i);
     var short = xAxisLabelShort(lbl);
     if (rotate) {
@@ -649,13 +660,22 @@ function svgLineChart(labels, series, opts) {
       svg += '<path d="'+lineD+'" fill="none" stroke="'+s.color+'" stroke-width="1.5"'+(s.dashed?' stroke-dasharray="5,3"':'')+' stroke-linejoin="round" stroke-linecap="round"/>';
     }
 
-    // Dots + value labels
+    // Dots + value labels — adaptado a densidad
+    var showDots   = density !== 'minimal';
+    var showLabels = density === 'detailed' || density === 'medium';
     pts.forEach(function(p) {
-      svg += '<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="3" fill="'+s.color+'" stroke="#fff" stroke-width="1"/>';
-      var valTxt = s.yRight ? p.v.toFixed(1) : fmtK(Math.round(p.v));
-      var ty = p.y - 8;
-      if (ty < padT + 10) ty = p.y + 16;
-      svg += '<text x="'+p.x.toFixed(1)+'" y="'+ty.toFixed(1)+'" text-anchor="middle" font-size="9" font-weight="600" fill="'+s.color+'">'+valTxt+'</text>';
+      if (showDots) {
+        var r = density === 'detailed' ? 3 : density === 'medium' ? 2.5 : 2;
+        svg += '<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="'+r+'" fill="'+s.color+'" stroke="#fff" stroke-width="1"/>';
+      }
+      if (showLabels) {
+        // En medium, mostrar etiquetas solo en picos (cada 3 puntos) para reducir ruido
+        if (density === 'medium' && p.i % 3 !== 0 && p.i !== pts.length-1) return;
+        var valTxt = s.yRight ? p.v.toFixed(1) : fmtK(Math.round(p.v));
+        var ty = p.y - 8;
+        if (ty < padT + 10) ty = p.y + 16;
+        svg += '<text x="'+p.x.toFixed(1)+'" y="'+ty.toFixed(1)+'" text-anchor="middle" font-size="9" font-weight="600" fill="'+s.color+'">'+valTxt+'</text>';
+      }
     });
   });
 
