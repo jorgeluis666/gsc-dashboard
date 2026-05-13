@@ -536,9 +536,6 @@ function xAxisLabelShort(label) {
 function svgLineChart(labels, series, opts) {
   opts = opts || {};
   var W = 860, H = opts.height || 180;
-  // padT gives room for the legend at the top; padB only needs space for X-axis labels.
-  var padL = 52, padR = opts.yRightLabel ? 52 : 16, padT = 34, padB = 46;
-  var cW = W - padL - padR, cH = H - padT - padB;
   var n = labels.length;
   if (n < 1) return '';
 
@@ -553,8 +550,7 @@ function svgLineChart(labels, series, opts) {
     return { mn: Math.min.apply(null,all), mx: Math.max.apply(null,all) };
   }
 
-  // Independent left-axis scales: series sharing the same `scale` key share range.
-  // If no scale key is provided, all left series share a single "default" scale.
+  // Group left series by scale key
   var scales = {};
   leftSeries.forEach(function(s){
     var k = s.scale || 'default';
@@ -563,18 +559,45 @@ function svgLineChart(labels, series, opts) {
   });
   Object.keys(scales).forEach(function(k){
     var r = seriesRange(scales[k]);
-    // Pad top by 15% so peaks aren't glued to the frame; floor baseline at 0 when all values ≥ 0.
     var span = r.mx - r.mn;
     r.mn = Math.min(r.mn, 0) < 0 ? r.mn : 0;
     r.mx = r.mx + (span * 0.15 || r.mx * 0.15 || 1);
     if (r.mn === r.mx) r.mx = r.mn + 1;
     scales[k] = r;
   });
-  var rR = seriesRange(rightSeries);
-  rR.mx = rR.mx + (rR.mx - rR.mn) * 0.1 || rR.mx * 1.1 || 1;
-  // Pick which scale drives the left axis labels.
-  var primaryKey = opts.primaryScale && scales[opts.primaryScale] ? opts.primaryScale : Object.keys(scales)[0];
-  var lR = scales[primaryKey] || { mn:0, mx:1 };
+
+  // Modo dual-axis: scale 'clics' a la izquierda, 'impr' a la derecha,
+  // cada eje con su propio color (matching las series). Resuelve la
+  // confusión de escalas independientes con un solo eje etiquetado.
+  var dualLR = opts.dualLeftRight;     // { leftScale, rightScale }
+  var leftAxisRange, rightAxisRange, leftAxisColor = '#aaa', rightAxisColor = '#aaa';
+  var hasRightAxis = false;
+
+  if (dualLR && scales[dualLR.leftScale] && scales[dualLR.rightScale]) {
+    leftAxisRange  = scales[dualLR.leftScale];
+    rightAxisRange = scales[dualLR.rightScale];
+    var lSrc = leftSeries.find(function(s){ return s.scale === dualLR.leftScale && !s.dashed; })
+            || leftSeries.find(function(s){ return s.scale === dualLR.leftScale; });
+    var rSrc = leftSeries.find(function(s){ return s.scale === dualLR.rightScale && !s.dashed; })
+            || leftSeries.find(function(s){ return s.scale === dualLR.rightScale; });
+    leftAxisColor  = lSrc ? lSrc.color : '#aaa';
+    rightAxisColor = rSrc ? rSrc.color : '#aaa';
+    hasRightAxis = true;
+  } else {
+    // Modo legacy: left = primary scale, right = yRight series
+    var primaryKey = opts.primaryScale && scales[opts.primaryScale] ? opts.primaryScale : Object.keys(scales)[0];
+    leftAxisRange = scales[primaryKey] || { mn:0, mx:1 };
+    if (rightSeries.length) {
+      var rR = seriesRange(rightSeries);
+      rR.mx = rR.mx + (rR.mx - rR.mn) * 0.1 || rR.mx * 1.1 || 1;
+      rightAxisRange = rR;
+      hasRightAxis = true;
+    }
+  }
+
+  // padT gives room for the legend at the top; padB only needs space for X-axis labels.
+  var padL = 52, padR = hasRightAxis ? 56 : 16, padT = 34, padB = 46;
+  var cW = W - padL - padR, cH = H - padT - padB;
 
   function toY(val, range, invert) {
     var norm = (val - range.mn) / (range.mx - range.mn || 1);
@@ -583,27 +606,29 @@ function svgLineChart(labels, series, opts) {
   }
 
   function rangeFor(s) {
-    if (s.yRight) return rR;
-    return scales[s.scale || 'default'] || lR;
+    if (s.yRight) return rightAxisRange || leftAxisRange;
+    if (dualLR && s.scale === dualLR.rightScale) return rightAxisRange;
+    return scales[s.scale || 'default'] || leftAxisRange;
   }
 
   function xOf(i) { return n === 1 ? padL + cW / 2 : padL + i / (n - 1) * cW; }
 
   var svg = '<svg class="chart-svg" viewBox="0 0 '+W+' '+H+'" style="width:100%;display:block">';
 
-  // Grid lines (4 horizontal)
+  // Grid lines + Y axis labels
   for (var g = 0; g <= 4; g++) {
     var gy = padT + g * cH / 4;
     svg += '<line x1="'+padL+'" y1="'+gy.toFixed(1)+'" x2="'+(padL+cW)+'" y2="'+gy.toFixed(1)+'" stroke="#e8e8e6" stroke-width="1"/>';
-    // Left axis labels
-    var lv = lR.mx - g * (lR.mx - lR.mn) / 4;
-    svg += '<text x="'+(padL-6)+'" y="'+(gy+4).toFixed(1)+'" text-anchor="end" font-size="9" fill="#aaa">'+fmtK(Math.round(lv))+'</text>';
-    // Right axis labels
-    if (rightSeries.length) {
-      var rv = opts.invertRight
-        ? rR.mn + g * (rR.mx - rR.mn) / 4
-        : rR.mx - g * (rR.mx - rR.mn) / 4;
-      svg += '<text x="'+(padL+cW+6)+'" y="'+(gy+4).toFixed(1)+'" text-anchor="start" font-size="9" fill="#aaa">'+rv.toFixed(1)+'</text>';
+    // Left axis labels (colored si dualLR está activo)
+    var lv = leftAxisRange.mx - g * (leftAxisRange.mx - leftAxisRange.mn) / 4;
+    svg += '<text x="'+(padL-6)+'" y="'+(gy+4).toFixed(1)+'" text-anchor="end" font-size="9" font-weight="'+(dualLR?'600':'400')+'" fill="'+leftAxisColor+'">'+fmtK(Math.round(lv))+'</text>';
+    // Right axis labels (Position invertida si invertRight, o segundo scale en dualLR)
+    if (hasRightAxis && rightAxisRange) {
+      var rv = opts.invertRight && !dualLR
+        ? rightAxisRange.mn + g * (rightAxisRange.mx - rightAxisRange.mn) / 4
+        : rightAxisRange.mx - g * (rightAxisRange.mx - rightAxisRange.mn) / 4;
+      var rTxt = dualLR ? fmtK(Math.round(rv)) : rv.toFixed(1);
+      svg += '<text x="'+(padL+cW+6)+'" y="'+(gy+4).toFixed(1)+'" text-anchor="start" font-size="9" font-weight="'+(dualLR?'600':'400')+'" fill="'+rightAxisColor+'">'+rTxt+'</text>';
     }
   }
 
@@ -1520,25 +1545,33 @@ function buildHTML(){
           content += '<div class="panel" style="padding:1rem 1.2rem 0.8rem"><p style="font-size:11px;color:#94A3B8;margin:0">Sin datos de tendencia para este rango.</p></div>';
           return;
         }
+        // Doble eje: Clics izquierda (rojo) + Impresiones derecha (verde).
+        // Posición ya no va en este chart — está en KPI cards y tablas.
         var tLabels = td.map(function(d){ return d.label; });
         var tSeries = [
           { label:'Clics',       values: td.map(function(d){ return d.clics; }), color:'#E85249', scale:'clics' },
-          { label:'Impresiones', values: td.map(function(d){ return d.impr;  }), color:'#059669', dashed:true, scale:'impr' },
-          { label:'Posición',    values: td.map(function(d){ return d.pos;   }), color:'#94A3B8', yRight:true }
+          { label:'Impresiones', values: td.map(function(d){ return d.impr;  }), color:'#059669', scale:'impr' }
         ];
         if (ctd.length >= 1) {
           var maxLen = Math.max(tLabels.length, ctd.length);
           tLabels = padTo(td.map(function(d){ return d.label; }), maxLen);
           tSeries = [
             { label:'Clics',        values: padTo(td.map(function(d){return d.clics;}),  maxLen), color:'#E85249', scale:'clics' },
-            { label:'Impresiones',  values: padTo(td.map(function(d){return d.impr;}),   maxLen), color:'#059669', dashed:true, scale:'impr' },
-            { label:'Clics (ant.)', values: padTo(ctd.map(function(d){return d.clics;}), maxLen), color:'rgba(232,82,73,0.35)', scale:'clics' },
-            { label:'Impr. (ant.)', values: padTo(ctd.map(function(d){return d.impr;}),  maxLen), color:'rgba(5,150,105,0.35)', dashed:true, scale:'impr' }
+            { label:'Impresiones',  values: padTo(td.map(function(d){return d.impr;}),   maxLen), color:'#059669', scale:'impr' },
+            { label:'Clics (ant.)', values: padTo(ctd.map(function(d){return d.clics;}), maxLen), color:'#E85249', dashed:true, scale:'clics' },
+            { label:'Impr. (ant.)', values: padTo(ctd.map(function(d){return d.impr;}),  maxLen), color:'#059669', dashed:true, scale:'impr' }
           ];
         }
         content += '<div class="panel" style="padding:1rem 1.2rem 0.6rem">';
-        content += svgLineChart(tLabels, tSeries, { height:200, invertRight:true, primaryScale:'impr' });
-        content += '<p style="font-size:10px;color:#aaa;padding:4px 0 6px">Clics y Impresiones usan escalas independientes · Posición: eje derecho (valores más bajos = mejor ranking)</p>';
+        content += svgLineChart(tLabels, tSeries, {
+          height: 200,
+          dualLeftRight: { leftScale: 'clics', rightScale: 'impr' }
+        });
+        content += '<p style="font-size:10px;color:#aaa;padding:4px 0 6px">'+
+          '<span style="color:#E85249;font-weight:600">■</span> Clics (eje izquierdo) &nbsp;·&nbsp; '+
+          '<span style="color:#059669;font-weight:600">■</span> Impresiones (eje derecho) &nbsp;·&nbsp; '+
+          'cada métrica se lee contra su propio eje'+
+        '</p>';
         content += '</div>';
         return;
       }
