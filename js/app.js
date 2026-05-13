@@ -596,7 +596,7 @@ function svgLineChart(labels, series, opts) {
   }
 
   // padT gives room for the legend at the top; padB only needs space for X-axis labels.
-  var padL = 52, padR = hasRightAxis ? 56 : 16, padT = 34, padB = 46;
+  var padL = 52, padR = hasRightAxis ? 56 : 16, padT = 34, padB = opts.hideXLabels ? 12 : 46;
   var cW = W - padL - padR, cH = H - padT - padB;
 
   function toY(val, range, invert) {
@@ -644,18 +644,21 @@ function svgLineChart(labels, series, opts) {
                  : 1;
   var rotate = density !== 'detailed';
 
-  // X axis labels (thin out cuando hay muchos puntos)
-  labels.forEach(function(lbl, i) {
-    if (i % xLabelStep !== 0 && i !== n - 1) return;  // siempre mostrar el último
-    var x = xOf(i);
-    var short = xAxisLabelShort(lbl);
-    if (rotate) {
-      var tx = x.toFixed(1), ty = (H - padB + 14).toFixed(1);
-      svg += '<text x="'+tx+'" y="'+ty+'" text-anchor="end" font-size="9" fill="#888" transform="rotate(-45 '+tx+' '+ty+')">'+esc(short)+'</text>';
-    } else {
-      svg += '<text x="'+x.toFixed(1)+'" y="'+(H-padB+18)+'" text-anchor="middle" font-size="9" fill="#888">'+esc(short)+'</text>';
-    }
-  });
+  // X axis labels (thin out cuando hay muchos puntos). Si hideXLabels está
+  // activo (chart apilado arriba de otro), se omiten para no duplicar el eje.
+  if (!opts.hideXLabels) {
+    labels.forEach(function(lbl, i) {
+      if (i % xLabelStep !== 0 && i !== n - 1) return;  // siempre mostrar el último
+      var x = xOf(i);
+      var short = xAxisLabelShort(lbl);
+      if (rotate) {
+        var tx = x.toFixed(1), ty = (H - padB + 14).toFixed(1);
+        svg += '<text x="'+tx+'" y="'+ty+'" text-anchor="end" font-size="9" fill="#888" transform="rotate(-45 '+tx+' '+ty+')">'+esc(short)+'</text>';
+      } else {
+        svg += '<text x="'+x.toFixed(1)+'" y="'+(H-padB+18)+'" text-anchor="middle" font-size="9" fill="#888">'+esc(short)+'</text>';
+      }
+    });
+  }
 
   // Draw series
   series.forEach(function(s) {
@@ -1545,32 +1548,35 @@ function buildHTML(){
           content += '<div class="panel" style="padding:1rem 1.2rem 0.8rem"><p style="font-size:11px;color:#94A3B8;margin:0">Sin datos de tendencia para este rango.</p></div>';
           return;
         }
-        // Doble eje: Clics izquierda (rojo) + Impresiones derecha (verde).
-        // Posición ya no va en este chart — está en KPI cards y tablas.
+        // Dos charts apilados con escala independiente cada uno.
+        // Evita que una métrica grande aplaste a la otra y elimina la
+        // ambigüedad visual del doble eje (Clics nunca debería verse "más
+        // alto" que Impresiones, pero con doble eje pasa).
         var tLabels = td.map(function(d){ return d.label; });
-        var tSeries = [
-          { label:'Clics',       values: td.map(function(d){ return d.clics; }), color:'#E85249', scale:'clics' },
-          { label:'Impresiones', values: td.map(function(d){ return d.impr;  }), color:'#059669', scale:'impr' }
+        var maxLen = tLabels.length;
+        if (ctd.length >= 1) maxLen = Math.max(tLabels.length, ctd.length);
+        tLabels = padTo(td.map(function(d){ return d.label; }), maxLen);
+
+        var clicsSeries = [
+          { label:'Clics', values: padTo(td.map(function(d){return d.clics;}), maxLen), color:'#E85249' }
+        ];
+        var imprSeries = [
+          { label:'Impresiones', values: padTo(td.map(function(d){return d.impr;}), maxLen), color:'#059669' }
         ];
         if (ctd.length >= 1) {
-          var maxLen = Math.max(tLabels.length, ctd.length);
-          tLabels = padTo(td.map(function(d){ return d.label; }), maxLen);
-          tSeries = [
-            { label:'Clics',        values: padTo(td.map(function(d){return d.clics;}),  maxLen), color:'#E85249', scale:'clics' },
-            { label:'Impresiones',  values: padTo(td.map(function(d){return d.impr;}),   maxLen), color:'#059669', scale:'impr' },
-            { label:'Clics (ant.)', values: padTo(ctd.map(function(d){return d.clics;}), maxLen), color:'#E85249', dashed:true, scale:'clics' },
-            { label:'Impr. (ant.)', values: padTo(ctd.map(function(d){return d.impr;}),  maxLen), color:'#059669', dashed:true, scale:'impr' }
-          ];
+          clicsSeries.push({ label:'Clics (ant.)',       values: padTo(ctd.map(function(d){return d.clics;}), maxLen), color:'#E85249', dashed:true });
+          imprSeries.push({  label:'Impresiones (ant.)', values: padTo(ctd.map(function(d){return d.impr;}),  maxLen), color:'#059669', dashed:true });
         }
+
         content += '<div class="panel" style="padding:1rem 1.2rem 0.6rem">';
-        content += svgLineChart(tLabels, tSeries, {
-          height: 200,
-          dualLeftRight: { leftScale: 'clics', rightScale: 'impr' }
-        });
+        // Chart 1 — Clics (sin labels X, los muestra el chart de abajo)
+        content += svgLineChart(tLabels, clicsSeries, { height: 140, hideXLabels: true });
+        // Separador sutil
+        content += '<div style="height:1px;background:var(--divider);margin:6px 0"></div>';
+        // Chart 2 — Impresiones (con labels X)
+        content += svgLineChart(tLabels, imprSeries, { height: 160 });
         content += '<p style="font-size:10px;color:#aaa;padding:4px 0 6px">'+
-          '<span style="color:#E85249;font-weight:600">■</span> Clics (eje izquierdo) &nbsp;·&nbsp; '+
-          '<span style="color:#059669;font-weight:600">■</span> Impresiones (eje derecho) &nbsp;·&nbsp; '+
-          'cada métrica se lee contra su propio eje'+
+          'Cada métrica tiene su propia escala vertical · Posición y CTR disponibles en las tarjetas de arriba'+
         '</p>';
         content += '</div>';
         return;
