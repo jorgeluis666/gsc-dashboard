@@ -35,6 +35,9 @@ var S = {
   blogSitemapLoading: false,  // no persisted
   blogIncludePath: '',  // si está seteado, solo URLs con este prefijo cuentan como blog
   blogExcludePaths: '',
+  // páginas comerciales / términos comerciales (sitio-específicos)
+  svcPaths: '',        // CSV: paths que el usuario considera "comerciales/landing"
+  paidExtraTerms: '',  // CSV: términos comerciales adicionales para isPaid
   // modal temp state (not persisted)
   showDateModal: false,
   modalTab: 'filtrar',      // filtrar | comparar
@@ -67,6 +70,8 @@ function loadState() {
       S.blogSitemapDate   = d.blogSitemapDate   || '';
       S.blogIncludePath   = d.blogIncludePath   || '';
       S.blogExcludePaths  = d.blogExcludePaths  || '';
+      S.svcPaths          = d.svcPaths          || '';
+      S.paidExtraTerms    = d.paidExtraTerms    || '';
       S.gscWasConnected   = !!d.gscWasConnected;
       // Render optimista: si estuvo conectado, mostramos "Cargando GSC…"
       // mientras se intenta el silent re-auth.
@@ -92,6 +97,8 @@ function saveState() {
       blogSitemapDate:  S.blogSitemapDate,
       blogIncludePath:  S.blogIncludePath,
       blogExcludePaths: S.blogExcludePaths,
+      svcPaths:         S.svcPaths,
+      paidExtraTerms:   S.paidExtraTerms,
       gscWasConnected:  S.gscWasConnected
     }));
   } catch(e) {}
@@ -105,16 +112,46 @@ function toast(msg) {
 }
 
 // ── CONSTANTS ────────────────────────────────────────────
-var PAID = ["meta ads","facebook ads","google ads","tiktok ads","tik tok ads","agencia meta","agencia google","agencia facebook","agencia tiktok","publicidad en google","publicidad en facebook","publicidad en tiktok","servicio de google ads","consultoría google ads","consultoria google ads","agencia de publicidad","campañas google","campañas meta","campañas facebook","campañas tiktok","agencia ads"];
-var SVCS = ["/agencia-facebook-ads","/agencia-google-ads","/agencia-tik-tok-ads","/agencia-meta-ads","/asesoria-marketing-digital","/campanas-publicitarias-digitales","/agencia-seo","/facebook/meta","/facebook/facebook-ads"];
+// Términos genéricos que indican intención comercial/transaccional en una query.
+// Para sectores específicos, el usuario puede agregar términos en Configuración
+// (S.paidExtraTerms — CSV).
+var PAID_BASE = [
+  'comprar','venta','precio','costo','cuánto cuesta','cuanto cuesta','tarifa','presupuesto',
+  'tienda','tienda online','donde comprar','dónde comprar','mejor precio','oferta','descuento','promoción','promocion',
+  'agencia','servicio','contratar','cotización','cotizacion','presupuestar'
+];
+
+function userPaidExtras() {
+  return ((S.paidExtraTerms||'').toLowerCase()
+    .split(',').map(function(s){return s.trim();})
+    .filter(function(s){return s.length>1;}));
+}
+
+function getPaidTerms() {
+  return PAID_BASE.concat(userPaidExtras());
+}
+
+// Páginas comerciales/de servicio: lista configurable por el usuario en
+// Configuración (S.svcPaths — CSV). Si vacía, detectamos heurísticamente las
+// landings (1-segmento) con tráfico como "páginas comerciales".
+function getSvcPaths() {
+  return ((S.svcPaths||'')
+    .split(',').map(function(s){return s.trim().toLowerCase();})
+    .filter(function(s){return s.length>1;}));
+}
 var RANGE_WEEKS  = { '7d':1, '28d':4, '3m':13, '6m':26, '12m':52, '16m':70 };
 var RANGE_LABELS = { '7d':'Últimos 7 días', '28d':'Últimos 28 días', '3m':'Últimos 3 meses', '6m':'Últimos 6 meses', '12m':'Últimos 12 meses', '16m':'Últimos 16 meses', 'custom':'Personalizado' };
 
 // ── HELPERS ──────────────────────────────────────────────
 function pN(v){return parseFloat(String(v||'0').replace(/[%\s]/g,'').replace(',','.'))||0;}
 function pP(v){return parseFloat(String(v||'0').replace(',','.'))||0;}
-function isPaid(q){var ql=(q||'').toLowerCase();return PAID.some(function(p){return ql.includes(p);});}
-function isSvc(url){var ul=(url||'').toLowerCase();return SVCS.some(function(s){return ul.includes(s);});}
+function isPaid(q){var ql=(q||'').toLowerCase();return getPaidTerms().some(function(p){return ql.indexOf(p)!==-1;});}
+function isSvc(url){
+  var ul=(url||'').toLowerCase();
+  var svcs = getSvcPaths();
+  if (!svcs.length) return false;     // sin lista configurada → ninguna URL es "servicio"
+  return svcs.some(function(s){return ul.indexOf(s)!==-1;});
+}
 
 // Paths que NO son artículos de blog aunque tengan 2+ segmentos
 // (WooCommerce, Shopify, archivos de categoría/tag, paginación, autor,
@@ -709,109 +746,104 @@ function setOverviewRange(r) {
 }
 
 // ── IDEAS HELPERS ─────────────────────────────────────────
-var SERVICE_MAP = [
-  { keys:['google ads','adwords'],      url:'/agencia-google-ads/',       label:'Google Ads' },
-  { keys:['facebook ads','meta ads'],   url:'/agencia-facebook-ads/',     label:'Facebook/Meta Ads' },
-  { keys:['tiktok ads','tik tok'],      url:'/agencia-tik-tok-ads/',      label:'TikTok Ads' },
-  { keys:['seo','posicionamiento web'], url:'/agencia-seo/',              label:'Agencia SEO' },
-  { keys:['looker studio','dashboard'], url:'/performance/dashboards-y-reportes/', label:'Dashboards' },
-  { keys:['landing page'],              url:'/servicio-de-landing-page/', label:'Landing Page' },
-  { keys:['ecommerce','woocommerce','tienda online'], url:'/e-commerce/', label:'E-commerce' },
-  { keys:['marketing digital','asesoria','consultoría'], url:'/asesoria-marketing-digital/', label:'Asesoría Marketing' },
-  { keys:['redes sociales','community manager'], url:'/gestion-redes-sociales/', label:'Gestión Redes' }
-];
+// Las ideas se generan dinámicamente desde los datos del sitio actual.
+// Para "Apunta a" buscamos la página real del sitio cuyo slug coincida
+// mejor con las palabras de la query.
+
+var ID_STOPWORDS = ['como','para','que','con','los','las','del','por','una','uno','unos','unas','del','sin','sobre','entre','este','esta','estos','estas','muy','mas','más','pero','si','sí','no'];
+
+function tokenize(text) {
+  return (text||'').toLowerCase()
+    .replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i')
+    .replace(/[óòö]/g,'o').replace(/[úùü]/g,'u').replace(/ñ/g,'n')
+    .replace(/[^\w\s]/g,' ')
+    .split(/\s+/)
+    .filter(function(w){ return w.length > 2 && ID_STOPWORDS.indexOf(w) === -1; });
+}
+
+// Encuentra la página del sitio cuya URL contiene más palabras de la query.
+// Devuelve null si no hay buen match — el caller debe mostrar "—".
+function findRelevantPage(query, opts) {
+  opts = opts || {};
+  var pages = (S.gscData && S.gscData.paginas) || [];
+  if (!pages.length) return null;
+  var qWords = tokenize(query);
+  if (!qWords.length) return null;
+
+  var bestScore = 0, best = null;
+  pages.forEach(function(p) {
+    var url = (p['Páginas principales']||'').toLowerCase();
+    var path = url.replace(/^https?:\/\/[^/]+/,'').replace(/\/$/,'');
+    if (!path || path === '/') return;                 // skip homepage
+    // Si excludeBlog está activo, no sugerir artículos del blog como target
+    if (opts.excludeBlog && isBlogArticle(p['Páginas principales']||'')) return;
+    var urlNorm = tokenize(path);
+    var score = 0;
+    qWords.forEach(function(w) {
+      if (urlNorm.indexOf(w) !== -1) score += 2;
+      else if (w.length > 4 && urlNorm.some(function(uw){ return uw.indexOf(w.slice(0,-1)) !== -1; })) score += 1;
+    });
+    var impr = pN(p.Impresiones);
+    if (impr > 100)  score += 0.3;
+    if (impr > 1000) score += 0.5;
+    if (score > bestScore) { bestScore = score; best = p['Páginas principales']; }
+  });
+  return bestScore >= 2 ? best : null;
+}
 
 function suggestTarget(query) {
-  var ql = (query||'').toLowerCase();
-  for (var i=0; i<SERVICE_MAP.length; i++) {
-    if (SERVICE_MAP[i].keys.some(function(k){ return ql.includes(k); })) return SERVICE_MAP[i].url;
-  }
-  return '/asesoria-marketing-digital/';
+  var url = findRelevantPage(query, { excludeBlog: true });
+  return url ? shortURL(url) : '—';
 }
 
 function suggestTargetLabel(query) {
-  var ql = (query||'').toLowerCase();
-  for (var i=0; i<SERVICE_MAP.length; i++) {
-    if (SERVICE_MAP[i].keys.some(function(k){ return ql.includes(k); })) return SERVICE_MAP[i].label;
-  }
-  return 'Asesoría Marketing';
+  var url = findRelevantPage(query, { excludeBlog: true });
+  if (!url) return 'Sin match';
+  // Convierte slug en label legible: "/categoria-producto/ropa-infantil/" → "Ropa Infantil"
+  var slug = url.replace(/^https?:\/\/[^/]+/,'').replace(/\/$/,'').split('/').pop() || '';
+  return slug.replace(/-/g,' ').replace(/\b\w/g, function(c){ return c.toUpperCase(); });
 }
 
 function generateIdea(query, mode) {
-  var q  = (query||'').toLowerCase();
   var qt = query || '';
+  var ql = qt.toLowerCase();
 
   if (mode === 'rankboost') {
-    if (q.includes('fecha') || q.includes('celebra') || q.includes('efemeride')) {
-      return 'Actualizar con fechas 2026 + agregar sección de CTA hacia servicios';
+    if (/\b(202[4-6]|fecha|temporada|navidad|d[ií]a de)/.test(ql)) {
+      return 'Actualizar con datos/fechas vigentes + reforzar enlaces internos a página relacionada';
     }
-    if (q.includes('red social') || q.includes('estadistica')) {
-      return 'Agregar datos actualizados 2026 + bloque interno hacia Gestión Redes';
-    }
-    return 'Mejorar H1 con keyword exacta + enriquecer con datos/ejemplos reales de Perú';
+    return 'Refinar H1 con keyword exacta + agregar datos actuales y ejemplos · mejorar enlaces internos';
   }
 
-  // Cluster mode
-  if (q.includes('looker studio') || q.includes('dashboard') || q.includes('reporte')) {
-    return 'Guía: cómo conectar ' + qt + ' paso a paso con capturas reales';
+  // Cluster mode — detectar intención de búsqueda
+  if (/^(qu[eé]|c[oó]mo|cu[aá]ndo|d[oó]nde|por qu[eé]|para qu[eé])/.test(ql)) {
+    return 'Artículo informativo: responder "' + qt + '" con ejemplos y datos';
   }
-  if (q.includes('google ads') || q.includes('adwords')) {
-    return 'Cuánto invertir en Google Ads en Perú: presupuestos y resultados reales';
+  if (/\b(mejor|top|ranking|comparar|comparativa|vs|diferencia)\b/.test(ql)) {
+    return 'Comparativa / ranking: ' + qt;
   }
-  if (q.includes('facebook') || q.includes('meta ads')) {
-    return 'Facebook Ads para negocios peruanos: ejemplos de campañas y presupuestos';
+  if (/\b(precio|costo|cuesta|tarifa|presupuesto)\b/.test(ql)) {
+    return 'Guía de precios y presupuestos: ' + qt;
   }
-  if (q.includes('tiktok')) {
-    return 'TikTok Ads en Perú: presupuesto mínimo, formatos y casos de éxito';
+  if (/\b(comprar|venta|tienda|donde|d[oó]nde)\b/.test(ql)) {
+    return 'Landing/categoría enfocada en intención transaccional: ' + qt;
   }
-  if (q.includes('seo') || q.includes('posicionamiento')) {
-    return 'SEO en Lima: cuánto tarda, cuánto cuesta y qué resultados esperar';
+  if (/\b(opini[oó]n|review|reseña|experiencia)\b/.test(ql)) {
+    return 'Reseña o caso de uso: ' + qt;
   }
-  if (q.includes('fecha') || q.includes('celebra') || q.includes('efemeride')) {
-    return 'Agregar sección "Publicita en ' + qt + '" con CTA hacia Meta Ads / Google Ads';
+  if (/\b(gu[ií]a|tutorial|paso a paso|c[oó]mo hacer)\b/.test(ql)) {
+    return 'Tutorial paso a paso: ' + qt + ' (con capturas)';
   }
-  if (q.includes('red social') || q.includes('instagram') || q.includes('tiktok')) {
-    return 'Estadísticas de ' + qt + ' en Perú 2026 + cuándo anunciarse';
-  }
-  if (q.includes('ecosistema digital') || q.includes('marketing digital')) {
-    return 'Ecosistema digital para e-commerce peruano: herramientas y agencias';
-  }
-  if (q.includes('woocommerce') || q.includes('ecommerce') || q.includes('tienda')) {
-    return 'Cómo lanzar una tienda online en Perú: checklist y costos reales 2026';
-  }
-  if (q.includes('dia de la madre') || q.includes('campaña')) {
-    return 'Campañas de ' + qt + ': ejemplos reales con resultados de Meta Ads y Google Ads';
-  }
-  return 'Guía práctica de ' + qt + ' para negocios en Lima (con ejemplos y costos)';
+  return 'Pillar post sobre "' + qt + '" — cubrir el tema completo con secciones FAQ';
 }
 
 function suggestSupportArticles(url) {
-  var ul = (url||'').toLowerCase();
-  if (ul.includes('google-ads') || ul.includes('adwords')) {
-    return '① Cuánto cuesta Google Ads en Perú · ② Google Ads vs Facebook Ads · ③ Errores comunes en campañas de Google Ads';
-  }
-  if (ul.includes('facebook-ads') || ul.includes('meta')) {
-    return '① Cómo escalar campañas de Meta Ads · ② Facebook Ads para e-commerce · ③ Guía de segmentación en Meta Ads Peru';
-  }
-  if (ul.includes('tiktok')) {
-    return '① Presupuesto mínimo TikTok Ads Perú · ② Formatos de anuncios TikTok · ③ TikTok vs Meta Ads: cuál elegir';
-  }
-  if (ul.includes('seo')) {
-    return '① SEO técnico para WooCommerce · ② Cuánto tarda el SEO en dar resultados · ③ Cómo elegir agencia SEO en Lima';
-  }
-  if (ul.includes('asesoria') || ul.includes('marketing')) {
-    return '① Qué hace una agencia de marketing digital · ② Métricas que debe reportar tu agencia · ③ Cómo auditar tus campañas digitales';
-  }
-  if (ul.includes('landing')) {
-    return '① Qué hace una buena landing page · ② Landing page vs sitio web · ③ Cuánto cuesta una landing page en Perú';
-  }
-  if (ul.includes('e-commerce') || ul.includes('ecommerce')) {
-    return '① Costos de lanzar un e-commerce en Perú · ② WooCommerce vs Shopify · ③ Cómo aumentar conversiones en tienda online';
-  }
-  if (ul.includes('campanas') || ul.includes('publicitar')) {
-    return '① Guía de campañas digitales para fechas especiales · ② Cómo planificar presupuesto de publicidad digital';
-  }
-  return '① Caso de éxito de cliente · ② Guía práctica del servicio · ③ Comparativa con otras opciones del mercado';
+  // Genera 3 ángulos de artículo de soporte basados en el slug de la URL.
+  var slug = (url||'').replace(/^https?:\/\/[^/]+/,'').replace(/\/$/,'');
+  var lastSeg = slug.split('/').filter(Boolean).pop() || '';
+  if (!lastSeg) return '① Guía completa del tema · ② Comparativa con alternativas · ③ Caso de éxito real';
+  var topic = lastSeg.replace(/-/g,' ');
+  return '① Guía completa sobre ' + topic + ' · ② ' + topic + ' vs alternativas · ③ Errores comunes con ' + topic;
 }
 
 // ── SIDEBAR SVG ICONS ────────────────────────────────────
@@ -1170,6 +1202,37 @@ function buildHTML(){
         '<p style="font-size:11px;color:var(--text-2);line-height:1.5">'+
           'Fallback automático cuando los métodos 1 y 2 están vacíos. '+
           'Suma paths a la lista de exclusiones por defecto.'+
+        '</p>'+
+      '</div>'+
+
+      // ── Páginas comerciales y términos transaccionales ──
+      '<div class="setup-card" style="margin-top:16px">'+
+        '<h2 style="margin-bottom:4px">Páginas comerciales y términos transaccionales</h2>'+
+        '<p class="desc" style="margin-bottom:18px">'+
+          'Sirven para detectar oportunidades comerciales: páginas que deberían vender y queries con intención de compra. '+
+          'Si dejás esto vacío, las funciones de Ideas/Oportunidades trabajan en modo genérico.'+
+        '</p>'+
+
+        '<label style="font-size:11px;font-weight:600;color:#5F6368;letter-spacing:.04em;display:block;margin-bottom:6px">PATHS DE PÁGINAS COMERCIALES / LANDING</label>'+
+        '<div style="display:flex;gap:8px;margin-bottom:8px">'+
+          '<input id="cfg-svc-paths" value="'+esc(S.svcPaths||'')+'" '+
+            'placeholder="/agencia-google-ads/, /servicio-de-landing/, /e-commerce/" style="flex:1">'+
+          '<button class="btn" onclick="saveConfig()">Guardar</button>'+
+        '</div>'+
+        '<p style="font-size:11px;color:var(--text-2);margin-bottom:20px;line-height:1.5">'+
+          'URLs específicas que vendés (servicios, landings de campañas). Separá por coma. '+
+          'Para e-commerce, podés usar prefijos como <code>/producto/</code> o <code>/categoria-producto/</code>.'+
+        '</p>'+
+
+        '<label style="font-size:11px;font-weight:600;color:#5F6368;letter-spacing:.04em;display:block;margin-bottom:6px">TÉRMINOS COMERCIALES EXTRA</label>'+
+        '<div style="display:flex;gap:8px;margin-bottom:6px">'+
+          '<input id="cfg-paid-terms" value="'+esc(S.paidExtraTerms||'')+'" '+
+            'placeholder="ropa de bebé, biberón, cuna, cochecito" style="flex:1">'+
+          '<button class="btn" onclick="saveConfig()">Guardar</button>'+
+        '</div>'+
+        '<p style="font-size:11px;color:var(--text-2);line-height:1.5">'+
+          'Suma a los genéricos (comprar, precio, tienda, etc.). Útil para detectar queries '+
+          'transaccionales propias del rubro (ej. "ropa de bebé", "biberón anticólico").'+
         '</p>'+
       '</div>';
 
@@ -1621,11 +1684,11 @@ function buildHTML(){
     '</div>';
 
     var actions=[
-      opp.paidGap.length&&{c:'red',t:'Reescribir snippets de páginas de servicio',d:'Las páginas de '+opp.paidGap.slice(0,2).map(function(r){return shortURL(r['Páginas principales']||'');}).join(', ')+' tienen impresiones pero CTR casi cero.',a:'Reescribir title: [Servicio] Lima · Lima Retail | meta desc: incluir resultado concreto o prueba social.'},
+      opp.paidGap.length&&{c:'red',t:'Reescribir snippets de páginas comerciales',d:'Las páginas de '+opp.paidGap.slice(0,2).map(function(r){return shortURL(r['Páginas principales']||'');}).join(', ')+' tienen impresiones pero CTR casi cero.',a:'Reescribir title con palabra clave + propuesta de valor concreta; meta description con beneficio o prueba social al inicio.'},
       opp.quickwins.length&&{c:'red',t:'Optimizar contenido para consultas en pág. 2 con volumen',d:'Consultas como '+opp.quickwins.slice(0,2).map(function(r){return'"'+r['Consultas principales']+'"';}).join(', ')+' tienen exposición pero no generan clics.',a:'Mejorar H1, enriquecer con datos actuales, revisar que la intención de búsqueda coincida con el contenido.'},
       {c:'amber',t:'Crear cluster de contenido para Meta/Google/TikTok Ads',d:'Las páginas de servicio están lejos porque no tienen artículos de soporte.',a:'Publicar 2–3 artículos por plataforma con casos reales. Enlazar internamente a la página de servicio.'},
       opp.ctrGap.length&&{c:'amber',t:'Corregir snippets en pág. 1 con 0 clics',d:opp.ctrGap.length+' consultas en primeras posiciones no generan ningún clic.',a:'Revisar títulos truncados en mobile, desalineación entre intención y snippet.'},
-      {c:'blue',t:'Agregar CTAs de servicio en artículos de alto tráfico',d:'El 77% del tráfico viene de contenido editorial sin relación con servicios.',a:'Insertar bloque de CTA en artículos de fechas/redes sociales: "¿Quieres publicidad en estas fechas? → Meta Ads con Lima Retail".'}
+      {c:'blue',t:'Agregar CTAs comerciales en artículos de alto tráfico',d:'El contenido editorial suele recibir más tráfico que las páginas comerciales sin convertirlo.',a:'Insertar bloques de CTA contextuales en los artículos top: enlace + propuesta de valor que conecte el tema del post con la página comercial relevante.'}
     ].filter(Boolean);
 
     content+='<p class="sec-lbl">Acciones prioritarias</p><div class="panel">'+
@@ -1770,7 +1833,7 @@ function buildHTML(){
 
     content += '<div style="background:#E6F1FB;border:1px solid #B5D4F4;border-radius:10px;padding:1rem 1.2rem;margin-bottom:1rem">' +
       '<p style="font-size:12px;color:var(--brand);font-weight:500;margin-bottom:4px">Cómo usar este tab</p>' +
-      '<p style="font-size:11px;color:#374f6b;line-height:1.6">Cada sección identifica una brecha diferente entre lo que Google ya asocia a Lima Retail y lo que las páginas de servicio necesitan para posicionarse. Los temas sugeridos son artículos de <b>cluster</b>: contenido editorial que apunta internamente a la página de servicio y le transfiere autoridad.</p>' +
+      '<p style="font-size:11px;color:#374f6b;line-height:1.6">Cada sección identifica una brecha diferente entre lo que Google ya asocia a tu sitio y lo que las páginas comerciales/de servicio necesitan para posicionarse. Los temas sugeridos son artículos de <b>cluster</b>: contenido editorial que apunta internamente a la página objetivo y le transfiere autoridad.</p>' +
     '</div>';
 
     content += '<p class="sec-lbl">A · Temas con demanda que el sitio aún no cubre bien' +
@@ -1990,10 +2053,14 @@ function saveConfig(){
   var gss  = document.getElementById('cfg-gscsite');
   var bin  = document.getElementById('cfg-blog-prefix');
   var bex  = document.getElementById('cfg-blog-excludes');
+  var svc  = document.getElementById('cfg-svc-paths');
+  var pdt  = document.getElementById('cfg-paid-terms');
   if(cid)  S.clientId         = cid.value.trim();
   if(gss)  S.gscSiteUrl       = gss.value;
   if(bin)  S.blogIncludePath  = bin.value.trim();
   if(bex)  S.blogExcludePaths = bex.value.trim();
+  if(svc)  S.svcPaths         = svc.value.trim();
+  if(pdt)  S.paidExtraTerms   = pdt.value.trim();
   saveState();
   toast('✓ Configuración guardada');
   render();
