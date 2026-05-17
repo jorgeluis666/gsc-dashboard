@@ -43,67 +43,28 @@ function queryGSC(siteUrl, body, callback) {
 }
 
 // ── DATA MAPPERS ─────────────────────────────────────────
-function rowsToConsultas(rows) {
-  return rows.map(function(r) {
-    return {
-      'Consultas principales': r.keys[0],
-      'Clics':        r.clicks,
-      'Impresiones':  r.impressions,
-      'CTR':          (r.ctr * 100).toFixed(2) + ' %',
-      'Posición':     r.position.toFixed(2)
-    };
-  });
-}
-
-function rowsToPaginas(rows) {
-  return rows.map(function(r) {
-    return {
-      'Páginas principales': r.keys[0],
-      'Clics':       r.clicks,
-      'Impresiones': r.impressions,
-      'CTR':         (r.ctr * 100).toFixed(2) + ' %',
-      'Posición':    r.position.toFixed(2)
-    };
-  });
-}
-
-function rowsToGrafico(rows) {
-  return rows.map(function(r) {
-    return {
-      'Fecha':       r.keys[0],
-      'Clics':       r.clicks,
-      'Impresiones': r.impressions,
-      'CTR':         (r.ctr * 100).toFixed(2) + ' %',
-      'Posición':    r.position.toFixed(2)
-    };
-  });
+function makeRowMapper(keyName, keyTransform) {
+  return function(rows) {
+    return rows.map(function(r) {
+      var obj = {
+        'Clics':       r.clicks,
+        'Impresiones': r.impressions,
+        'CTR':         (r.ctr * 100).toFixed(2) + ' %',
+        'Posición':    r.position.toFixed(2)
+      };
+      obj[keyName] = keyTransform ? keyTransform(r.keys[0]) : r.keys[0];
+      return obj;
+    });
+  };
 }
 
 var DEVICE_NAMES = { DESKTOP: 'Computadora', MOBILE: 'Móvil', TABLET: 'Tablet' };
 
-function rowsToDispositivos(rows) {
-  return rows.map(function(r) {
-    return {
-      'Dispositivo': DEVICE_NAMES[r.keys[0]] || r.keys[0],
-      'Clics':       r.clicks,
-      'Impresiones': r.impressions,
-      'CTR':         (r.ctr * 100).toFixed(2) + ' %',
-      'Posición':    r.position.toFixed(2)
-    };
-  });
-}
-
-function rowsToPaises(rows) {
-  return rows.map(function(r) {
-    return {
-      'País':        r.keys[0],
-      'Clics':       r.clicks,
-      'Impresiones': r.impressions,
-      'CTR':         (r.ctr * 100).toFixed(2) + ' %',
-      'Posición':    r.position.toFixed(2)
-    };
-  });
-}
+var rowsToConsultas    = makeRowMapper('Consultas principales');
+var rowsToPaginas      = makeRowMapper('Páginas principales');
+var rowsToGrafico      = makeRowMapper('Fecha');
+var rowsToDispositivos = makeRowMapper('Dispositivo', function(k){ return DEVICE_NAMES[k] || k; });
+var rowsToPaises       = makeRowMapper('País');
 
 // ── CONNECT / FETCH SITES ────────────────────────────────
 var gscTokenClient = null;

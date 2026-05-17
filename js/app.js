@@ -121,11 +121,14 @@ var PAID_BASE = [
   'agencia','servicio','contratar','cotización','cotizacion','presupuestar'
 ];
 
-function userPaidExtras() {
-  return ((S.paidExtraTerms||'').toLowerCase()
-    .split(',').map(function(s){return s.trim();})
-    .filter(function(s){return s.length>1;}));
+// Splits a comma-separated string into lowercase trimmed tokens of length > 1.
+function parseCSV(str) {
+  return (str || '').toLowerCase().split(',')
+    .map(function(s){ return s.trim(); })
+    .filter(function(s){ return s.length > 1; });
 }
+
+function userPaidExtras() { return parseCSV(S.paidExtraTerms); }
 
 function getPaidTerms() {
   return PAID_BASE.concat(userPaidExtras());
@@ -134,11 +137,7 @@ function getPaidTerms() {
 // Páginas comerciales/de servicio: lista configurable por el usuario en
 // Configuración (S.svcPaths — CSV). Si vacía, detectamos heurísticamente las
 // landings (1-segmento) con tráfico como "páginas comerciales".
-function getSvcPaths() {
-  return ((S.svcPaths||'')
-    .split(',').map(function(s){return s.trim().toLowerCase();})
-    .filter(function(s){return s.length>1;}));
-}
+function getSvcPaths() { return parseCSV(S.svcPaths); }
 var RANGE_WEEKS  = { '7d':1, '28d':4, '3m':13, '6m':26, '12m':52, '16m':70 };
 var RANGE_LABELS = { '7d':'Últimos 7 días', '28d':'Últimos 28 días', '3m':'Últimos 3 meses', '6m':'Últimos 6 meses', '12m':'Últimos 12 meses', '16m':'Últimos 16 meses', 'custom':'Personalizado' };
 
@@ -177,11 +176,7 @@ var NON_BLOG_PATHS = [
 
 // Permite a cada usuario sumar paths adicionales desde Configuración
 // (separados por coma, ej: "/marca-blanca/, /eventos/")
-function userExtraExcludes() {
-  return (S.blogExcludePaths || '')
-    .split(',').map(function(s){ return s.trim().toLowerCase(); })
-    .filter(function(s){ return s.length > 1; });
-}
+function userExtraExcludes() { return parseCSV(S.blogExcludePaths); }
 
 // Normaliza una URL para comparar (lowercase + sin trailing slash + sin querystring)
 function normURL(u){
@@ -292,7 +287,13 @@ function clearBlogSitemap() {
   render();
   toast('Sitemap del blog desvinculado');
 }
-function shortURL(u){return(u||'').replace('https://limaretail.com','').split('#')[0]||'/';}
+// Returns the site origin without trailing slash, derived from the connected property.
+function siteBase() {
+  var url = S.gscSiteUrl || '';
+  if (!url) return '';
+  try { return new URL(url).origin; } catch(e) { return url.replace(/\/$/, ''); }
+}
+function shortURL(u){ return (u||'').replace(siteBase(), '').split('#')[0] || '/'; }
 function fmtK(v){return v>=1000?(v/1000).toFixed(1)+'k':Math.round(v)+'';}
 function calcM(snap){
   if(!snap||!snap.data)return null;
@@ -353,7 +354,7 @@ function deltaHTML(pos,pp){
 function addTrackedURL(url, label) {
   if (!url) return;
   url = url.trim().replace(/\s+/g,'');
-  if (!url.startsWith('http')) url = 'https://limaretail.com' + url;
+  if (!url.startsWith('http')) url = siteBase() + url;
   var exists = S.trackedURLs.find(function(t){ return t.url === url; });
   if (exists) { toast('Esa URL ya está en seguimiento'); return; }
   S.trackedURLs.push({ url:url, label:label||url, dateAdded:new Date().toISOString(), notes:[] });
@@ -364,7 +365,7 @@ function addTrackedURL(url, label) {
 function optimizarPagina(url) {
   var exists = S.trackedURLs.some(function(t){ return t.url === url; });
   if (!exists) {
-    var slug = url.replace('https://limaretail.com','') || url;
+    var slug = url.replace(siteBase(), '') || url;
     S.trackedURLs.push({ url:url, label:slug, dateAdded:new Date().toISOString().slice(0,10), notes:[] });
     saveState();
   }
